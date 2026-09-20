@@ -25,7 +25,13 @@ Windows は PowerShell / コマンドプロンプトから同じコマンドで�
 
 - **`node` が見つからない**: Node.js を PATH に通すか、フルパスで起動してください。Claude デスクトップアプリ同梱の node でも動きます（例: `& "C:\Program Files\Bionic\resources\app\.webpack-bionic\bin\node.exe" server.mjs`）。
 - **`http://localhost:8787` を開くと別のアプリの画面や 404 が出る**: 他のプロセスが同じポートを使っています（起動ログに「注意: … は別のプロセスが使用中です」と出ます）。`--port 8790` などで回避してください。サーバーは `127.0.0.1` と `::1` の両方に bind するので、片方だけ空いていれば `http://127.0.0.1:8787` / `http://[::1]:8787` で直接開くこともできます。
-- **セッションは出るのにタスクが 0 件**: `~/.claude/tasks/` `~/.claude/todos/` が無く、セッション記録にも TodoWrite が無い環境（Claude Code がタスク機能を使っていない）ではタスクは表示されません。セッション帯だけが機能します。
+- **セッションは出るのにタスクが 0 件**: Claude Code のタスクツール（TaskCreate 等）は Claude 5 系モデルでは既定で無効です。`~/.claude/settings.json` に次を書くと全セッションで有効になり、`~/.claude/tasks/<sessionId>/<n>.json` が作られてボードに流れてきます（設定変更は起動中のセッションにも反映されます）。
+
+  ```json
+  { "env": { "CLAUDE_CODE_ENABLE_TODO_TOOLS": "1" } }
+  ```
+
+  それでも 0 件なら、Claude Code がまだタスクを作っていないだけです（3 ステップ以上の作業を頼むと自動で作ります）。
 
 ## 読み取っているもの（すべて読み取り専用）
 

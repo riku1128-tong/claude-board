@@ -64,7 +64,7 @@ claude-board/
 
 - 実データ（このセッション自身の `~/.claude`）で起動確認済み。セッション帯に「エージェント稼働中」、タスク3件がレーンに出ることを確認。
 - **Windows 実機確認済み（2026-09-20, Windows 11 / Claude Code 2.1.275 / Node 25）**: `~/.claude` 検出・`sessions/<pid>.json` の pid 生存判定（`process.kill(pid,0)`）・busy/idle → 稼働中/入力待ち の判定は正しく動いた。稼働 5 セッションを表示。
-  - この環境には `tasks/` `todos/` が無く、transcript にも TodoWrite/TaskCreate が無いためタスクは 0 件。タスクのパーサ自体は未変更（Linux 側で確認済みの形式のまま）。
+  - 当初 `tasks/` `todos/` が無くタスク 0 件だったが、原因は Claude 5 系モデルではタスクツールが既定で無効なこと。`~/.claude/settings.json` に `{"env":{"CLAUDE_CODE_ENABLE_TODO_TOOLS":"1"}}` を置いて有効化し、`tasks/<sessionId>/1.json` `2.json`（形式は上表どおり）が生成され、進行中 / ブロック中レーンに出ることを確認済み。
   - transcript(jsonl) で新たに確認した行種: `custom-title`(customTitle) / `agent-name` / `relocated`(relocatedCwd) / `last-prompt` / `attachment` / `queue-operation` / `file-history-snapshot` / `atis-latch` / `system`(subtype:stop_hook_summary)。`summary` 行はこのバージョンでは出ていない。
   - サイドカー: `projects/<enc>/<sessionId>/custom-title.json`、`projects/<enc>/<sessionId>.desktop-released.json`（`reason:"delete"` = デスクトップアプリで削除済み）。
 - Windows 確認で直した点（server.mjs）:
