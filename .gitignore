@@ -1,0 +1,7 @@
+# ユーザーデータ（付箋・ブックマーク）
+board-notes.json
+
+# OS / エディタ
+.DS_Store
+Thumbs.db
+*.log
