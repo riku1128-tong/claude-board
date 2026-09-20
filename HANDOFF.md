@@ -74,6 +74,8 @@ claude-board/
   - ブランチ `HEAD`（git 管理外/detached）は空扱い。削除済みセッション（desktop-released reason=delete）は非表示。
   - `todos/*-agent-*.json` の owner: `projects/<enc>/<sessionId>/subagents/agent-<id>.jsonl` があれば `agent-name` 行 or 最初の依頼文で `サブエージェント …` と表示（**この環境には subagents ディレクトリが無く未検証**。無ければ従来通り `サブエージェント <id8>`）。
   - index.html: セッションカードの脚注は `pid` のみ表示（名前はタイトルに出るため重複回避）。
+  - セッション詳細パネル: セッションカード／セレクトで選ぶと左に状態・cwd・ブランチ・pid・開始/最終更新・直近の発話・付箋（`sess:<id>` キー）を表示。閉じるボタンの svg サイズ未指定バグも修正。
+  - 完了タスクの保持: `--done-days`（既定 7、0 で無制限）より古い完了は `/api/state` から省く。`~/.claude/tasks/` 自体は Claude Code の `cleanupPeriodDays`（既定 30 日）で pending も含めて削除される。`status: deleted` はファイル即削除。`tasks/<session>/` には `.lock` `.highwatermark` の隠しファイルがある（無視）。
 
 ## 次にやると良いこと（優先順）
 

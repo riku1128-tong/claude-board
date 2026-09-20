@@ -19,6 +19,7 @@ const HOSTS = arg('--host', '') ? [arg('--host')] : ['127.0.0.1', '::1'];
 const CLAUDE_DIR = path.resolve(arg('--dir', process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')));
 const NOTES_FILE = path.join(__dirname, 'board-notes.json');
 const ACTIVE_MIN = Number(arg('--active-minutes', 10)); // この分数以内に更新があれば「稼働中」
+const DONE_DAYS = Number(arg('--done-days', 7)); // 完了タスクはこの日数以内のものだけ表示（0 で無制限）。ファイル自体は Claude Code の cleanupPeriodDays（既定30日）で消える
 
 // ---------- utils ----------
 const exists = p => { try { fs.accessSync(p); return true; } catch { return false; } };
@@ -203,8 +204,10 @@ let cache = { at: 0, data: null };
 async function buildState() {
   if (Date.now() - cache.at < 2000 && cache.data) return cache.data;
   const sessions = await scanSessions();
-  const tasks = (await scanTasks(sessions)).filter(t => t.status !== 'deleted');
-  const byId = new Map(tasks.map(t => [t.id, t]));
+  const all = (await scanTasks(sessions)).filter(t => t.status !== 'deleted');
+  const byId = new Map(all.map(t => [t.id, t]));
+  // 古い完了タスクは省く（updatedAt はファイル更新時刻 ≒ 完了時刻）
+  const tasks = all.filter(t => t.status !== 'completed' || DONE_DAYS <= 0 || Date.now() - t.updatedAt < DONE_DAYS * 864e5);
   for (const t of tasks) {
     const openBlockers = (t.blockedBy || []).map(b => byId.get(`${t.sessionId}:${b}`)).filter(x => x && x.status !== 'completed');
     t.blocked = t.status !== 'completed' && openBlockers.length > 0;
@@ -216,7 +219,7 @@ async function buildState() {
   const sessArr = [...sessions.values()].filter(s => s.state !== 'idle' || tasks.some(t => t.sessionId === s.id) || (Date.now() - s.lastAt) < 7 * 864e5)
     .sort((a, b) => (b.running - a.running) || (b.lastAt - a.lastAt)).slice(0, 60).map(({ todos, file, pdir, ...rest }) => ({ ...rest, taskCount: tasks.filter(t => t.sessionId === rest.id).length }));
   const notes = (await readJson(NOTES_FILE)) || {};
-  const data = { scannedAt: Date.now(), claudeDir: CLAUDE_DIR, dirExists: exists(CLAUDE_DIR), activeMinutes: ACTIVE_MIN, sessions: sessArr, tasks, notes };
+  const data = { scannedAt: Date.now(), claudeDir: CLAUDE_DIR, dirExists: exists(CLAUDE_DIR), activeMinutes: ACTIVE_MIN, doneDays: DONE_DAYS, sessions: sessArr, tasks, notes };
   cache = { at: Date.now(), data };
   return data;
 }

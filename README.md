@@ -17,6 +17,7 @@ node server.mjs
 node server.mjs --port 9000                 # ポート変更
 node server.mjs --dir "C:\Users\you\.claude" # .claude の場所を指定（既定: ~/.claude または CLAUDE_CONFIG_DIR）
 node server.mjs --active-minutes 30         # 何分以内の更新を「稼働中」とみなすか（プロセス情報が無い場合の補助）
+node server.mjs --done-days 30              # 完了タスクを何日分表示するか（既定 7、0 で無制限）
 ```
 
 Windows は PowerShell / コマンドプロンプトから同じコマンドで動きます。
@@ -43,6 +44,7 @@ Windows は PowerShell / コマンドプロンプトから同じコマンドで�
 | `~/.claude/projects/**/*.jsonl` | セッション記録 → プロジェクト名 / cwd / ブランチ / 最初の依頼文 / 最終更新 |
 
 タスクの状態はボードから変更しません（Claude Code 側が正）。
+完了タスクは既定で直近 7 日分だけ表示します（`--done-days`）。ファイル自体は Claude Code の `cleanupPeriodDays`（既定 30 日、未完了も含む）で自動削除され、`deleted` にしたタスクは即時に消えます。
 付箋とブックマークだけは `board-notes.json`（このフォルダ内）に保存されます。
 
 ## 画面

@@ -223,7 +223,7 @@ function renderBoard(){
   const lanesHtml=LANES.map(l=>{
     if(l.id==='completed'&&!showDone)return'';
     const items=list.filter(t=>laneOf(t)===l.id).sort((a,b)=>b.updatedAt-a.updatedAt);
-    return`<section class="lane" style="--lc:${l.color}"><div class="lane-h"><h2>${l.name}</h2><span class="cnt num">${items.length}件</span></div>
+    return`<section class="lane" style="--lc:${l.color}"><div class="lane-h"><h2>${l.name}</h2>${l.id==='completed'&&state.doneDays>0?`<small>直近 ${state.doneDays} 日</small>`:''}<span class="cnt num">${items.length}件</span></div>
       <div class="cards${items.length?'':' empty'}">${items.length?items.map((t,i)=>{const tl=tileFor(t);const st=SSTATE[t.session.state];return`
         <div class="card${t.id===sel?' sel':''}" data-id="${t.id}" role="button" tabindex="0">
           <div class="tile" style="${tl.style}">${svg(tl.icon)}</div>
