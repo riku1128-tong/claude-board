@@ -18,8 +18,6 @@ node server.mjs --port 9000                 # ポート変更
 node server.mjs --dir "C:\Users\you\.claude" # .claude の場所を指定（既定: ~/.claude または CLAUDE_CONFIG_DIR）
 node server.mjs --active-minutes 30         # 何分以内の更新を「稼働中」とみなすか（プロセス情報が無い場合の補助）
 node server.mjs --done-days 30              # 完了タスクを何日分表示するか（既定 7、0 で無制限）
-```
-
 node server.mjs --tailscale                 # Tailscale の私設ネットワークからも開けるようにする（下記）
 ```
 
@@ -32,7 +30,6 @@ Windows は PowerShell / コマンドプロンプトから同じコマンドで�
 - 起動時に Tailscale が未接続でも、60 秒ごとに探して見つかり次第 bind します（ログオン時の自動起動向け）
 - LAN や公開 IP には bind しません。それでも公開したい場合は `--host 0.0.0.0` を明示してください（非推奨。ボードには全セッションの内容と支出が出ます）
 - スマホのログインは PC と同じプロバイダ（Google なら Google）を選ばないと別の tailnet になります
-```bash
 
 ### 困ったとき
 
