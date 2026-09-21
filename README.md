@@ -61,8 +61,10 @@ Windows は PowerShell / コマンドプロンプトから同じコマンドで�
 
 Claude 経由で使った外部サービスと課金を記録する台帳です（`board-spend.json`、このフォルダ内・`.gitignore` 済み）。サービス別の合計、明細、追加フォームがボードに出ます。
 
-- 画面のフォームで追加、行末のゴミ箱で削除。金額を空で登録すると「要確認」になります
-- API: `GET /api/spend` で一覧、`POST /api/spend` に `{"service","amount"|null,"currency":"USD"|"JPY","note","sessionId","source"}` で追加、`{"update":"<id>", …}` で修正、`{"delete":"<id>"}` で削除
+- **年月単位で管理**します。右上のセレクトで月を選ぶと、その月の合計・サービス別内訳・明細に切り替わり（既定は今月、「全期間」も可）、「月別推移」に月ごとの購入・従量・合計が並びます
+- 画面のフォームで追加、行末のゴミ箱で削除。金額を空で登録すると「要確認」になります。「月額」にチェックすると、その月から毎月同額が発生するものとして各月に計上されます（サブスク用。解約したら API で `until` を入れる）
+- 従量課金（メーター）は日別の記録から月ごとに集計されます
+- API: `GET /api/spend` で一覧、`POST /api/spend` に `{"service","amount"|null,"currency":"USD"|"JPY","note","sessionId","source"}` で追加、`{"update":"<id>", …}` で修正、`{"delete":"<id>"}` で削除。`recurring:"monthly"` と `until` で月額サブスクを表現
 - `sessionId` を入れるとボード上でプロジェクト名・セッション名と紐づきます
 - Claude Code のセッションから自動で記録させるには `~/.claude/CLAUDE.md` に記録ルールを書きます（このリポジトリの HANDOFF.md に例）。記録自体は curl 1 回で、Claude のトークンはほぼ使いません
 

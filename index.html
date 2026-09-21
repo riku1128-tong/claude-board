@@ -244,37 +244,63 @@ function hitSummary(hits){
 // ---- サービスと支出（board-spend.json） ----
 const money=(a,c)=>a==null?'—':(c==='JPY'?'¥'+Math.round(a).toLocaleString():(c==='USD'?'$':c+' ')+(Number.isInteger(a)?a:a.toFixed(2)));
 let spendOpen=true;try{spendOpen=localStorage.getItem('ccb:spend')!=='0'}catch(e){}
+// 年月キー（ローカル時刻）
+const ym=ts=>{const d=new Date(ts);return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`};
+const ymLabel=k=>k==='all'?'全期間':`${k.slice(0,4)}年${Number(k.slice(5,7))}月`;
+let spendMonth=ym(Date.now());
+// 台帳 entry を月ごとの発生額に展開する。recurring:"monthly" は ts の月から until（無ければ今月）まで毎月同額
+function ledgerByMonth(es){
+  const out=[];const now=ym(Date.now());
+  for(const e of es){
+    if(e.recurring==='monthly'&&e.amount!=null){
+      let d=new Date(e.ts);d.setDate(1);const end=e.until?ym(e.until):now;
+      for(let k=ym(d);k<=end;d.setMonth(d.getMonth()+1),k=ym(d))out.push({...e,month:k,occ:k===ym(e.ts)?'初回':'継続'});
+    }else out.push({...e,month:ym(e.ts),occ:''});
+  }
+  return out;
+}
 function spendSection(){
-  const es=[...((state.spend||{}).entries||[])].sort((a,b)=>b.ts-a.ts);
+  const esAll=[...((state.spend||{}).entries||[])].sort((a,b)=>b.ts-a.ts);
   const ms=(state.spend||{}).meters||[];
   const money4=(a,c)=>a==null?'—':(c==='USD'?'$':c+' ')+(a<0.01&&a>0?a.toFixed(4):a.toFixed(2));
-  // サービス別にまとめる: 台帳（購入・契約）の合計 + メーター（従量）の累計
+  const occAll=ledgerByMonth(esAll);
+  const months=[...new Set([...occAll.map(o=>o.month),...ms.flatMap(m=>m.months.map(x=>x.month))])].sort().reverse();
+  if(spendMonth!=='all'&&!months.includes(spendMonth))spendMonth=months[0]||spendMonth;
+  const inMonth=k=>spendMonth==='all'||k===spendMonth;
+  const occ=occAll.filter(o=>inMonth(o.month));
+  const meterCost=m=>m.months.filter(x=>inMonth(x.month)).reduce((s,x)=>s+x.cost,0);
+  // サービス別: 台帳（購入・契約）＋メーター（従量）
   const by=new Map();const get=k=>by.get(k)||by.set(k,{service:k,ledger:{},meter:0,meterCur:'USD',n:0,unc:0,last:0}).get(k);
-  for(const e of es){const o=get(e.service);o.n++;if(e.amount==null)o.unc++;else o.ledger[e.currency]=(o.ledger[e.currency]||0)+e.amount;o.last=Math.max(o.last,e.ts)}
-  for(const m of ms){const o=get(m.service);o.meter+=m.total.cost;o.meterCur=m.currency;o.last=Math.max(o.last,m.lastAt||0)}
+  for(const o of occ){const s=get(o.service);s.n++;if(o.amount==null)s.unc++;else s.ledger[o.currency]=(s.ledger[o.currency]||0)+o.amount;s.last=Math.max(s.last,o.ts)}
+  for(const m of ms){const c=meterCost(m);if(!c&&spendMonth!=='all'&&!m.months.some(x=>x.month===spendMonth))continue;const s=get(m.service);s.meter+=c;s.meterCur=m.currency;s.last=Math.max(s.last,m.lastAt||0)}
   const ledgerTot={},meterTot={},tot={};
-  for(const o of by.values()){for(const [c,v] of Object.entries(o.ledger)){ledgerTot[c]=(ledgerTot[c]||0)+v;tot[c]=(tot[c]||0)+v}if(o.meter){meterTot[o.meterCur]=(meterTot[o.meterCur]||0)+o.meter;tot[o.meterCur]=(tot[o.meterCur]||0)+o.meter}}
+  for(const s of by.values()){for(const [c,v] of Object.entries(s.ledger)){ledgerTot[c]=(ledgerTot[c]||0)+v;tot[c]=(tot[c]||0)+v}if(s.meter){meterTot[s.meterCur]=(meterTot[s.meterCur]||0)+s.meter;tot[s.meterCur]=(tot[s.meterCur]||0)+s.meter}}
   const fmtSums=s=>Object.entries(s).map(([c,v])=>money4(v,c)).join(' + ')||'$0';
-  const amtOf=o=>Object.values(o.ledger).reduce((a,b)=>a+b,0)+o.meter;
-  const paid=[...by.values()].filter(o=>amtOf(o)>0||o.unc).sort((a,b)=>amtOf(b)-amtOf(a)),free=[...by.values()].filter(o=>amtOf(o)===0&&!o.unc);
-  const hasLedger=o=>Object.values(o.ledger).some(v=>v>0);
-  const kind=o=>[hasLedger(o)?'購入・契約':'',o.meter?'従量':''].filter(Boolean).join('＋')||(o.unc?'要確認':'—');
-  const rows=paid.map(o=>`<tr><td><b>${esc(o.service)}</b></td><td class="r num"><b>${o.unc&&amtOf(o)===0?'—':money4(amtOf(o),o.meterCur)}</b>${o.unc?` <span class="unc">要確認 ${o.unc}</span>`:''}</td><td style="color:var(--ink-2)">${kind(o)}${o.meter&&hasLedger(o)?`<div class="p-hint">購入 ${fmtSums(o.ledger)} ＋ 従量 ${money4(o.meter,o.meterCur)}</div>`:''}</td><td class="num" style="color:var(--ink-3);white-space:nowrap">${ago(o.last)}</td></tr>`).join('');
+  const amtOf=s=>Object.values(s.ledger).reduce((a,b)=>a+b,0)+s.meter;
+  const paid=[...by.values()].filter(s=>amtOf(s)>0||s.unc).sort((a,b)=>amtOf(b)-amtOf(a)),free=[...by.values()].filter(s=>amtOf(s)===0&&!s.unc);
+  const hasLedger=s=>Object.values(s.ledger).some(v=>v>0);
+  const kind=s=>[hasLedger(s)?'購入・契約':'',s.meter?'従量':''].filter(Boolean).join('＋')||(s.unc?'要確認':'—');
+  const rows=paid.map(s=>`<tr><td><b>${esc(s.service)}</b></td><td class="r num"><b>${s.unc&&amtOf(s)===0?'—':money4(amtOf(s),s.meterCur)}</b>${s.unc?` <span class="unc">要確認 ${s.unc}</span>`:''}</td><td style="color:var(--ink-2)">${kind(s)}${s.meter&&hasLedger(s)?`<div class="p-hint">購入 ${fmtSums(s.ledger)} ＋ 従量 ${money4(s.meter,s.meterCur)}</div>`:''}</td><td class="num" style="color:var(--ink-3);white-space:nowrap">${ago(s.last)}</td></tr>`).join('');
+  // 月別推移（全期間）
+  const hist=months.map(k=>{const l=occAll.filter(o=>o.month===k).reduce((a,o)=>a+(o.amount||0),0),mt=ms.reduce((a,m)=>a+m.months.filter(x=>x.month===k).reduce((s,x)=>s+x.cost,0),0);return{k,l,mt}});
+  const histRows=hist.map(h=>`<tr${h.k===spendMonth?' style="background:var(--accent-soft)"':''}><td><b>${ymLabel(h.k)}</b></td><td class="r num">${money4(h.l,'USD')}</td><td class="r num">${money4(h.mt,'USD')}</td><td class="r num"><b>${money4(h.l+h.mt,'USD')}</b></td></tr>`).join('');
   const meterRows=ms.map(m=>{const d30=m.days,max=Math.max(1e-9,...d30.map(d=>d.cost));const strip=d30.length?`<span class="mstrip" title="直近 ${d30.length} 日">${d30.map(d=>`<i style="height:${Math.max(2,Math.round(d.cost/max*18))}px" title="${d.day}: ${money4(d.cost,m.currency)} · ${d.requests} req · ${fmtTok(d.input)} tok"></i>`).join('')}</span>`:'';
     return`<tr><td><b>${esc(m.service)}</b><div class="p-hint">${m.exists?`${esc(m.file.split(/[\\/]/).slice(-2).join('/'))} · ${m.lastAt?ago(m.lastAt)+'に更新':''}`:'<span class="stale">ファイルが見つかりません</span>'} · 入力 $${m.pricePerMInput}/M${m.pricePerMOutput?` · 出力 $${m.pricePerMOutput}/M`:' · 出力無料'}</div></td>
       <td class="r num">${money4(m.today.cost,m.currency)}<div class="p-hint">${m.today.requests} req · ${fmtTok(m.today.input)}</div></td><td class="r num">${money4(m.month.cost,m.currency)}<div class="p-hint">${m.month.requests} req · ${fmtTok(m.month.input)}</div></td><td class="r num"><b>${money4(m.total.cost,m.currency)}</b><div class="p-hint">${m.total.requests} req · ${fmtTok(m.total.input)}</div></td><td>${strip}</td></tr>`}).join('');
-  const entryRows=es.map(e=>`<tr><td class="num" style="color:var(--ink-3);white-space:nowrap">${fmt(e.ts)}</td><td><b>${esc(e.service)}</b>${e.status==='unconfirmed'?' <span class="unc">要確認</span>':''}</td><td class="r num">${money(e.amount,e.currency)}</td><td>${esc(e.note)}${e.project?`<div class="p-hint">${esc(e.project)}${e.sessionTitle?' · '+esc(e.sessionTitle.slice(0,40)):''}</div>`:''}</td><td class="r"><button data-sp-del="${e.id}" title="削除">${svg('trash')}</button></td></tr>`).join('');
+  const entryRows=occ.sort((a,b)=>b.ts-a.ts).map(e=>`<tr><td class="num" style="color:var(--ink-3);white-space:nowrap">${e.occ==='継続'?ymLabel(e.month)+' <span class="p-hint">（継続）</span>':fmt(e.ts)}</td><td><b>${esc(e.service)}</b>${e.recurring?' <span class="pill" title="毎月発生">月額</span>':''}${e.status==='unconfirmed'?' <span class="unc">要確認</span>':''}</td><td class="r num">${money(e.amount,e.currency)}</td><td>${esc(e.note)}${e.project?`<div class="p-hint">${esc(e.project)}${e.sessionTitle?' · '+esc(e.sessionTitle.slice(0,40)):''}</div>`:''}</td><td class="r">${e.occ==='継続'?'':`<button data-sp-del="${e.id}" title="削除">${svg('trash')}</button>`}</td></tr>`).join('');
+  const sel=`<select class="tb sm" id="spendMonth" aria-label="対象月">${months.map(k=>`<option value="${k}"${k===spendMonth?' selected':''}>${ymLabel(k)}</option>`).join('')}<option value="all"${spendMonth==='all'?' selected':''}>全期間</option></select>`;
   const body=!spendOpen?'':`
-    <div class="spend-hero"><div class="sh-total"><b>合計</b><div class="amt num">${fmtSums(tot)}</div></div><div class="sh-break"><div><span>購入・契約</span><b class="num">${fmtSums(ledgerTot)}</b><small>台帳 ${es.length} 件</small></div><div><span>従量（実測・見積）</span><b class="num">${fmtSums(meterTot)}</b><small>${ms.length} メーター · 今日 ${money4(ms.reduce((s,m)=>s+m.today.cost,0),'USD')}</small></div></div></div>
-    <div class="c-t" style="padding:6px 12px 2px">内訳（サービス別）</div>
-    <table class="spend-t"><thead><tr><th>サービス</th><th style="text-align:right">金額</th><th>種別</th><th>最終更新</th></tr></thead><tbody>${rows||'<tr><td colspan="4" class="p-hint">課金のあるサービスはありません</td></tr>'}</tbody></table>
-    ${free.length?`<div class="p-hint" style="padding:0 12px 10px">無料で利用中（$0）: ${free.map(o=>esc(o.service)).join('、')}</div>`:''}
+    <div class="spend-hero"><div class="sh-total"><b>${ymLabel(spendMonth)}の合計</b><div class="amt num">${fmtSums(tot)}</div></div><div class="sh-break"><div><span>購入・契約</span><b class="num">${fmtSums(ledgerTot)}</b><small>${occ.length} 件</small></div><div><span>従量（実測・見積）</span><b class="num">${fmtSums(meterTot)}</b><small>${ms.length} メーター${spendMonth===ym(Date.now())||spendMonth==='all'?` · 今日 ${money4(ms.reduce((s,m)=>s+m.today.cost,0),'USD')}`:''}</small></div></div><div style="margin-left:auto">${sel}</div></div>
+    <div class="c-t" style="padding:6px 12px 2px">内訳（サービス別 · ${ymLabel(spendMonth)}）</div>
+    <table class="spend-t"><thead><tr><th>サービス</th><th style="text-align:right">金額</th><th>種別</th><th>最終更新</th></tr></thead><tbody>${rows||'<tr><td colspan="4" class="p-hint">この月に課金のあるサービスはありません</td></tr>'}</tbody></table>
+    ${free.length?`<div class="p-hint" style="padding:0 12px 10px">無料で利用中（$0）: ${free.map(s=>esc(s.service)).join('、')}</div>`:''}
+    <details class="spend-more" open><summary>月別推移</summary><table class="spend-t"><thead><tr><th>年月</th><th style="text-align:right">購入・契約</th><th style="text-align:right">従量</th><th style="text-align:right">合計</th></tr></thead><tbody>${histRows}</tbody></table></details>
     ${ms.length?`<details class="spend-more"><summary>従量課金の推移（今日／今月／累計）</summary><table class="spend-t"><thead><tr><th>サービス</th><th style="text-align:right">今日</th><th style="text-align:right">今月</th><th style="text-align:right">累計</th><th>日別</th></tr></thead><tbody>${meterRows}</tbody></table></details>`:''}
-    <details class="spend-more"><summary>台帳の明細（${es.length} 件）と追加</summary>
-      ${es.length?`<table class="spend-t"><thead><tr><th>日時</th><th>サービス</th><th style="text-align:right">金額</th><th>メモ</th><th></th></tr></thead><tbody>${entryRows}</tbody></table>`:'<p class="p-hint" style="padding:0 12px 10px">記録はまだありません。</p>'}
-      <form class="spend-add" id="spendAdd"><input class="svc-in" name="service" placeholder="サービス名" required list="svcList"><datalist id="svcList">${[...by.keys()].map(k=>`<option value="${esc(k)}">`).join('')}</datalist><input class="amt-in num" name="amount" type="number" step="0.01" min="0" placeholder="金額（空=未確認）"><select name="currency"><option>USD</option><option>JPY</option></select><input class="note-in" name="note" placeholder="メモ（何に・なぜ）"><button class="btn" type="submit">記録</button></form>
+    <details class="spend-more"><summary>台帳の明細（${ymLabel(spendMonth)} · ${occ.length} 件）と追加</summary>
+      ${occ.length?`<table class="spend-t"><thead><tr><th>日時</th><th>サービス</th><th style="text-align:right">金額</th><th>メモ</th><th></th></tr></thead><tbody>${entryRows}</tbody></table>`:'<p class="p-hint" style="padding:0 12px 10px">この月の記録はありません。</p>'}
+      <form class="spend-add" id="spendAdd"><input class="svc-in" name="service" placeholder="サービス名" required list="svcList"><datalist id="svcList">${[...new Set(esAll.map(e=>e.service))].map(k=>`<option value="${esc(k)}">`).join('')}</datalist><input class="amt-in num" name="amount" type="number" step="0.01" min="0" placeholder="金額（空=未確認）"><select name="currency"><option>USD</option><option>JPY</option></select><input class="note-in" name="note" placeholder="メモ（何に・なぜ）"><label style="font-size:12px;color:var(--ink-2);display:flex;align-items:center;gap:4px"><input type="checkbox" name="recurring">月額</label><button class="btn" type="submit">記録</button></form>
     </details>`;
-  return`<section class="lane spend" style="--lc:var(--l-done)"><div class="lane-h"><h2>サービスと支出</h2><small>Claude 経由で使った外部サービスと課金</small><button class="tb sm" data-spend-toggle>${spendOpen?'折りたたむ':'展開'}</button></div>${body}</section>`;
+  return`<section class="lane spend" style="--lc:var(--l-done)"><div class="lane-h"><h2>サービスと支出</h2><small>Claude 経由で使った外部サービスと課金 · 年月単位</small><button class="tb sm" data-spend-toggle>${spendOpen?'折りたたむ':'展開'}</button></div>${body}</section>`;
 }
 async function postSpend(j){const r=await fetch('/api/spend',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(j)});const d=await r.json();if(d.error)toast('エラー: '+d.error);else{await refresh();}return d}
 function barChart(title,buckets,tipLabel,hits){
@@ -418,7 +444,7 @@ $('#board').addEventListener('click',async e=>{
 });
 $('#board').addEventListener('submit',async e=>{
   const f=e.target.closest('#spendAdd');if(!f)return;e.preventDefault();const fd=new FormData(f);
-  const d=await postSpend({service:fd.get('service'),amount:fd.get('amount')===''?null:Number(fd.get('amount')),currency:fd.get('currency'),note:fd.get('note'),source:'manual'});
+  const d=await postSpend({service:fd.get('service'),amount:fd.get('amount')===''?null:Number(fd.get('amount')),currency:fd.get('currency'),note:fd.get('note'),recurring:fd.get('recurring')?'monthly':'',source:'manual'});
   if(d.ok)toast('記録しました');
 });
 $('#board').addEventListener('keydown',e=>{const c=e.target.closest('.card');if(c&&(e.key==='Enter'||e.key===' ')){e.preventDefault();select(c.dataset.id)}});
@@ -432,6 +458,7 @@ $('#panel').addEventListener('click',async e=>{
 $('#panel').addEventListener('keydown',e=>{if(e.target.id==='noteIn'&&e.key==='Enter'&&(e.metaKey||e.ctrlKey))$('#noteAdd').click()});
 $('#q').addEventListener('input',renderBoard);
 $('#fSess').addEventListener('change',e=>{selSess=e.target.value;render()});
+$('#board').addEventListener('change',e=>{if(e.target.id==='spendMonth'){spendMonth=e.target.value;renderBoard()}});
 $('#viewBoard').addEventListener('click',()=>{view='board';$('#viewBoard').setAttribute('aria-pressed','true');$('#viewBm').setAttribute('aria-pressed','false');renderBoard()});
 $('#viewBm').addEventListener('click',()=>{view='bm';$('#viewBoard').setAttribute('aria-pressed','false');$('#viewBm').setAttribute('aria-pressed','true');renderBoard()});
 $('#doneToggle').addEventListener('click',e=>{showDone=!showDone;e.currentTarget.setAttribute('aria-checked',showDone);renderBoard()});

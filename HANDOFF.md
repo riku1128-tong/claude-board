@@ -94,6 +94,7 @@ claude-board/
 - 記録ルールは `~/.claude/CLAUDE.md`（ユーザーのグローバル設定）に追記済み: 有料サービスの購入・チャージ・新規サービス利用（0 円含む）が起きたらセッション内で curl POST する。JSON は Windows の引数文字化け回避のためファイル経由。`sessionId` は `CLAUDE_CODE_SESSION_ID`
 - 初期データは transcript 全走査で洗い出した（ユーザー申告 4 件 + 検出 5 件）。走査の要点: `message.content` のテキストだけを対象に「購入|チャージ|クレジット|api key|$d」等で grep。tool_result やシステムプロンプトは "aws" "stripe"（ハムスターの縞）等のノイズが多いので除外
 - 画面: 「サービスと支出」セクション（折りたたみ可、`ccb:spend`）。フォーム入力中は refresh でボードを再描画しない
+- **年月単位**（2026-09-21 ユーザー要望）: `spendMonth`（既定 今月 / `all`）で台帳 entry（`ts` の月）とメーター（`meters[].months`）を絞る。`recurring:"monthly"` の entry は `ledgerByMonth()` が ts の月から `until`（無ければ今月）まで各月に展開（明細では「継続」行、削除不可）。「月別推移」は全期間の月ごとの購入・従量・合計
 
 ## 従量メーター（2026-09-21）
 

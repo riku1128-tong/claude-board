@@ -273,7 +273,9 @@ function normEntry(j) {
   const amount = j.amount == null || j.amount === '' ? null : Number(j.amount); if (amount !== null && Number.isNaN(amount)) return null;
   const currency = String(j.currency || 'USD').toUpperCase().slice(0, 3);
   return { id: j.id || Date.now().toString(36) + Math.random().toString(36).slice(2, 6), ts: toMs(j.ts) || Date.now(), service, amount, currency,
-    note: String(j.note || '').slice(0, 300), sessionId: String(j.sessionId || ''), status: j.status === 'unconfirmed' || amount === null ? 'unconfirmed' : 'confirmed', source: String(j.source || 'manual') };
+    note: String(j.note || '').slice(0, 300), sessionId: String(j.sessionId || ''), status: j.status === 'unconfirmed' || amount === null ? 'unconfirmed' : 'confirmed', source: String(j.source || 'manual'),
+    recurring: j.recurring === 'monthly' ? 'monthly' : '', // monthly: ts の月から毎月同額が発生する（サブスク）。画面が各月に展開する
+    until: toMs(j.until) || null }; // recurring の終了月（解約時に入れる）。null なら継続中
 }
 async function handleSpend(j) {
   const sp = await readSpend();
@@ -307,8 +309,9 @@ async function readMeters() {
     const days = [...c.days.entries()].sort((a, b) => a[0] < b[0] ? -1 : 1).map(([day, d]) => ({ day, ...d, cost: cost(d) }));
     const sum = arr => arr.reduce((s, d) => ({ requests: s.requests + d.requests, input: s.input + d.input, output: s.output + d.output, cost: s.cost + d.cost }), { requests: 0, input: 0, output: 0, cost: 0 });
     const today = dayKey(Date.now()), month = today.slice(0, 7);
+    const months = [...new Set(days.map(d => d.day.slice(0, 7)))].sort().map(mo => ({ month: mo, ...sum(days.filter(d => d.day.startsWith(mo))) }));
     out.push({ service: m.service, file, exists: !!st, currency: m.currency || 'USD', pricePerMInput: pin, pricePerMOutput: pout, lastAt: st?.mtimeMs || null,
-      today: sum(days.filter(d => d.day === today)), month: sum(days.filter(d => d.day.startsWith(month))), total: sum(days), days: days.slice(-30) });
+      today: sum(days.filter(d => d.day === today)), month: sum(days.filter(d => d.day.startsWith(month))), total: sum(days), days: days.slice(-30), months });
   }
   return out;
 }
