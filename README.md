@@ -67,6 +67,19 @@ Claude 経由で使った外部サービスと課金を記録する台帳です�
 - Claude Code のセッションから自動で記録させるには `~/.claude/CLAUDE.md` に記録ルールを書きます（このリポジトリの HANDOFF.md に例）。記録自体は curl 1 回で、Claude のトークンはほぼ使いません
 
 
+### 従量課金の実測（メーター）
+
+API の従量課金（TypeSafe など）は「購入」というイベントが無く、使った分だけじわじわ増えるので台帳には向きません。代わりに **各プロジェクトが API 応答の `usage` を 1 行ずつ `usage.jsonl` に追記**し、ボードがそれを日別に集計してコストを見積もります（トークン消費なし・無人・リアルタイム）。
+
+`board-meters.json`（このフォルダ内、`.gitignore` 済み）:
+
+```json
+{ "meters": [ { "service": "TypeSafe (Jev)", "file": "C:\path\to\project\usage.jsonl", "pricePerMInput": 0.042, "pricePerMOutput": 0, "currency": "USD" } ] }
+```
+
+`usage.jsonl` の 1 行: `{"ts":"2026-09-21T12:00:00Z","input_tokens":1702,"output_tokens":122}`（`requests` を付ければ集計済みの行として扱う）。コスト = 入力トークン × `pricePerMInput` / 1e6 ＋ 出力トークン × `pricePerMOutput` / 1e6。TypeSafe の Usage 画面が出す「Estimated」と同じ式です（あの画面は Cookie ログイン専用で無人取得できないため、ローカルで同じ計算をしています）。
+
+
 ## 画面
 
 - **セッション帯**: 稼働中セッションが先頭。クリックでそのセッションのタスクだけに絞り込み

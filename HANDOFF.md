@@ -95,6 +95,14 @@ claude-board/
 - 初期データは transcript 全走査で洗い出した（ユーザー申告 4 件 + 検出 5 件）。走査の要点: `message.content` のテキストだけを対象に「購入|チャージ|クレジット|api key|$d」等で grep。tool_result やシステムプロンプトは "aws" "stripe"（ハムスターの縞）等のノイズが多いので除外
 - 画面: 「サービスと支出」セクション（折りたたみ可、`ccb:spend`）。フォーム入力中は refresh でボードを再描画しない
 
+## 従量メーター（2026-09-21）
+
+- `board-meters.json = { meters:[{ service, file, pricePerMInput, pricePerMOutput, currency }] }`（gitignore）。`readMeters()` が各 `usage.jsonl` を差分読み（`meterCache`）して日別 `{requests,input,output,cost}` を集計、`/api/state.spend.meters[]` に `today / month / total / days(30)` で返す
+- 行形式 `{ts, input_tokens, output_tokens, requests?}`。`requests` 省略時は 1 行 = 1 リクエスト。console のバックフィル行は `requests` 付き
+- 記録側の例: `jev_test_action/jev.mjs` の `logUsage()`（API 応答の `usage` を `appendFile` で追記、失敗は握りつぶす）。9/21 分は console の `/api/usage?granularity=day` の値でバックフィル済み
+- **console.typesafe.ai/api/usage は Cookie 認証のみ**（Bearer / x-api-key は 401）。公式に使用量 API は無い。画面の Spend は「入力トークン × $0.042/M」の見積なので、ローカル集計と一致する（実測: 9/21 $0.0419 で一致）
+- 画面: 支出セクションに「従量課金（実測・見積）」表（今日／今月／累計＋日別ミニバー）。台帳の合計とは別枠（二重計上しない）
+
 ## 次にやると良いこと（優先順）
 
 1. ~~**Windows 実機確認**~~ 済み（上記）。残: `todos/` `tasks/` があるマシンでのタスク表示確認

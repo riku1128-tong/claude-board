@@ -9,3 +9,6 @@ Thumbs.db
 
 # 支出台帳（ユーザーデータ）
 board-spend.json
+
+# 従量メーター設定（ユーザー環境のパスを含む）
+board-meters.json

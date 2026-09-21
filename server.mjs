@@ -19,6 +19,7 @@ const HOSTS = arg('--host', '') ? [arg('--host')] : ['127.0.0.1', '::1'];
 const CLAUDE_DIR = path.resolve(arg('--dir', process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')));
 const NOTES_FILE = path.join(__dirname, 'board-notes.json');
 const SPEND_FILE = path.join(__dirname, 'board-spend.json'); // サービス別の支出台帳（ユーザーデータ）。POST /api/spend で追記
+const METERS_FILE = path.join(__dirname, 'board-meters.json'); // 従量メーターの設定: { meters: [{ service, file, pricePerMInput, pricePerMOutput, currency }] }
 const ACTIVE_MIN = Number(arg('--active-minutes', 10)); // この分数以内に更新があれば「稼働中」
 const DONE_DAYS = Number(arg('--done-days', 7)); // 完了タスクはこの日数以内のものだけ表示（0 で無制限）。ファイル自体は Claude Code の cleanupPeriodDays（既定30日）で消える
 const toMs = v => v == null ? null : typeof v === 'number' ? (v < 1e11 ? v * 1000 : v) : (Date.parse(v) || null);
@@ -282,6 +283,36 @@ async function handleSpend(j) {
   sp.entries.push(e); await writeSpend(); return { ok: true, entry: e };
 }
 
+// ---------- meters: 従量課金サービスの実測（各プロジェクトが書く usage.jsonl を集計） ----------
+// 行の形式: {"ts": ISO, "input_tokens": n, "output_tokens": n, "requests"?: n（省略時 1）}
+// コスト = input_tokens × pricePerMInput / 1e6 + output_tokens × pricePerMOutput / 1e6。
+// TypeSafe の Usage 画面（Cookie 認証のみで無人取得不可）と同じ式なので、同じ数字になる
+const meterCache = new Map(); // file -> { pos, days: Map<'YYYY-MM-DD', {requests, input, output}> }
+const dayKey = t => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+async function readMeters() {
+  const cfg = (await readJson(METERS_FILE)) || {};
+  const out = [];
+  for (const m of cfg.meters || []) {
+    if (!m?.file || !m.service) continue;
+    const file = path.resolve(m.file), st = await stat(file);
+    let c = meterCache.get(file);
+    if (!c || !st || st.size < c.pos) c = { pos: 0, days: new Map() };
+    if (st && st.size > c.pos) {
+      const { text, end } = await readFrom(file, c.pos);
+      for (const l of lines(text)) { const t = toMs(l.ts); if (!t) continue; const k = dayKey(t); const d = c.days.get(k) || { requests: 0, input: 0, output: 0 }; d.requests += Number(l.requests ?? 1) || 0; d.input += Number(l.input_tokens) || 0; d.output += Number(l.output_tokens) || 0; c.days.set(k, d); }
+      c.pos = end; meterCache.set(file, c);
+    }
+    const pin = Number(m.pricePerMInput) || 0, pout = Number(m.pricePerMOutput) || 0;
+    const cost = d => (d.input * pin + d.output * pout) / 1e6;
+    const days = [...c.days.entries()].sort((a, b) => a[0] < b[0] ? -1 : 1).map(([day, d]) => ({ day, ...d, cost: cost(d) }));
+    const sum = arr => arr.reduce((s, d) => ({ requests: s.requests + d.requests, input: s.input + d.input, output: s.output + d.output, cost: s.cost + d.cost }), { requests: 0, input: 0, output: 0, cost: 0 });
+    const today = dayKey(Date.now()), month = today.slice(0, 7);
+    out.push({ service: m.service, file, exists: !!st, currency: m.currency || 'USD', pricePerMInput: pin, pricePerMOutput: pout, lastAt: st?.mtimeMs || null,
+      today: sum(days.filter(d => d.day === today)), month: sum(days.filter(d => d.day.startsWith(month))), total: sum(days), days: days.slice(-30) });
+  }
+  return out;
+}
+
 // ---------- state ----------
 let cache = { at: 0, data: null };
 async function buildState() {
@@ -303,7 +334,7 @@ async function buildState() {
     .sort((a, b) => (b.running - a.running) || (b.lastAt - a.lastAt)).slice(0, 60).map(({ todos, file, pdir, ...rest }) => ({ ...rest, taskCount: tasks.filter(t => t.sessionId === rest.id).length }));
   const notes = (await readJson(NOTES_FILE)) || {};
   const usage = { tokens: await scanTokens(sessions) }; // 制限の % は出さない（statusLine の値は最後の API 応答時点で止まるため、正確でない）
-  const spend = await readSpend();
+  const spend = { ...(await readSpend()), meters: await readMeters() };
   for (const e of spend.entries) { const s = sessions.get(e.sessionId); e.sessionTitle = s ? s.title : ''; e.project = s ? s.project : ''; }
   const data = { scannedAt: Date.now(), claudeDir: CLAUDE_DIR, dirExists: exists(CLAUDE_DIR), activeMinutes: ACTIVE_MIN, doneDays: DONE_DAYS, sessions: sessArr, tasks, notes, usage, spend };
   cache = { at: Date.now(), data };
