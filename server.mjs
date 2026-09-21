@@ -60,7 +60,7 @@ async function scanLive() {
     if (!f.isFile() || !/^\d+\.json$/.test(f.name)) continue; // <pid>.<hash>.key などは無視
     const j = await readJson(path.join(CLAUDE_DIR, 'sessions', f.name));
     if (!j?.sessionId || !j.pid || !alive(j.pid)) continue;
-    live.set(j.sessionId, { pid: j.pid, status: j.status || 'busy', name: j.name || '', cwd: j.cwd, version: j.version, kind: j.kind, startedAt: j.startedAt, updatedAt: j.updatedAt });
+    live.set(j.sessionId, { pid: j.pid, status: j.status || 'busy', name: j.nameSource === 'user' ? (j.name || '') : '', entrypoint: j.entrypoint || '', cwd: j.cwd, version: j.version, kind: j.kind, startedAt: j.startedAt, updatedAt: j.updatedAt });
   }
   return live;
 }
@@ -99,6 +99,7 @@ async function scanSessions() {
       const summary = latest(l => l.type === 'summary' && l.summary)?.summary || '';
       let firstPrompt = '';
       for (const l of [...head, ...tail]) { if (l.type !== 'user' || l.isMeta || l.isSidechain) continue; const t = cleanPrompt(textOf(l.message?.content)); if (t) { firstPrompt = t; break; } }
+      const entrypoint = lv?.entrypoint || latest(l => l.entrypoint)?.entrypoint || ''; // claude-desktop / claude-vscode / cli
       const isMsg = l => (l.type === 'assistant' || l.type === 'user') && !l.isMeta && l.message;
       const last = latest(isMsg) || latest(l => l.timestamp) || {};
       const lastTs = Date.parse(last.timestamp || '') || st.mtimeMs;
@@ -125,7 +126,7 @@ async function scanSessions() {
         id, cwd, project: baseName(cwd) || cwd, branch,
         title: (lv?.name || customTitle || summary || firstPrompt || '(無題セッション)').replace(/\s+/g, ' ').slice(0, 120),
         startedAt: Date.parse(earliest(l => l.timestamp)?.timestamp || '') || st.birthtimeMs || st.mtimeMs, lastAt: lastTs, ageMin: Math.round(ageMin),
-        state, running: !!lv, pid: lv?.pid || null, name: lv?.name || '', version: lv?.version || '',
+        state, running: !!lv, pid: lv?.pid || null, name: lv?.name || '', version: lv?.version || '', entrypoint,
         lastText: lastText.slice(0, 300), size: st.size, todos, file, pdir,
       });
     }

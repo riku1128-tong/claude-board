@@ -83,6 +83,7 @@ claude-board/
 - transcript を **前回位置から差分読み**（`tokenCache`、追記前提・縮んだら全読み）。assistant 行は content ブロックごとに複数行に分かれ `message.usage` が重複するので `message.id` で重複排除。`model === "<synthetic>"` は制限ヒット等の擬似メッセージなので除外し、`quotaLimits.status === "rejected"` を「制限に当たった」印に使う
 - 色: Fable `--c-fable` / その他 `--c-other`（light #3f6fe8/#d99a2b, dark #6a8ff2/#bd8a2c。dataviz の validate_palette.js で CVD 検証済み）
 - **使用率 % のメーターは作って消した（経緯）**: ① セッション内 cron で `get_usage` → POST は 1 回あたりキャッシュ読取 ~1M トークンで本末転倒。② ターミナル claude の statusLine（`rate_limits`）はトークン消費ゼロだが、値は「そのセッションが最後に受けた API 応答」で止まり、他セッションの消費を反映しない（実測: ファイルは 60 秒ごとに書かれるが値は不変）。③ モデル別の週間枠（Fable）は statusLine に来ない。→ 古い数字は誤情報になるので、ユーザー判断で % 表示自体を廃止。`~/.claude` 外に % を書く経路も無い
+- **起動元**: `sessions/<pid>.json` と transcript の `entrypoint`（`claude-desktop` / `claude-vscode` / `cli`）を `session.entrypoint` として返し、カードと詳細に「Desktop / VS Code / ターミナル」バッジを出す。VS Code 拡張・ターミナルも同じ `~/.claude` に書くので追加対応は不要。ただし VS Code は `name` をフォルダ名から自動生成（`nameSource:"derived"`、例 `riku1-29`）するので、`name` は `nameSource === "user"` のときだけタイトルに使う
 - 画面の既定テーマはダーク（`localStorage` の `ccb:theme` があればそちら優先。右上のボタンで切替）
 - Windows 自動起動: タスクスケジューラ `ClaudeBoard`（ログオン時、`wscript start-hidden.vbs "<node.exe>"`）。`.vbs` は ANSI で読まれるため ASCII のみで書くこと
 

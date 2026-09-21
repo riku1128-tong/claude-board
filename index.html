@@ -199,6 +199,7 @@ const LANES=[
   {id:'pending',name:'待機中',color:'var(--l-you)',desc:'まだ着手していないタスク'},
   {id:'completed',name:'完了',color:'var(--l-done)',desc:'終わったタスク'},
 ];
+const HOST={'claude-desktop':'Desktop','claude-vscode':'VS Code',cli:'ターミナル'};const hostOf=s=>HOST[s.entrypoint]||(s.entrypoint?esc(s.entrypoint):'');
 const SSTATE={agent:{label:'エージェント稼働中',color:'var(--l-agent)',live:true},you:{label:'あなたの入力待ち',color:'var(--l-you)',live:true},idle:{label:'待機',color:'var(--l-hold)',live:false}};
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -276,7 +277,7 @@ function renderBoard(){
       <span class="st${st.live?' live':''}" style="color:${st.color}"><i></i>${st.label}</span>
       <span class="pj"><span title="${esc(s.cwd)}">${esc(s.project)}</span>${s.branch?`<small>${esc(s.branch)}</small>`:''}</span>
       <span class="ti">${esc(s.title)}</span>
-      <span class="ft"><span>タスク ${s.taskCount}${s.running?` · pid ${s.pid}`:''}</span><span>${ago(s.lastAt)}</span></span></button>`}).join(''):`<div class="cards empty" style="flex:1">セッションが見つかりません</div>`}</div></section>`;
+      <span class="ft"><span>${hostOf(s)?hostOf(s)+' · ':''}タスク ${s.taskCount}${s.running?` · pid ${s.pid}`:''}</span><span>${ago(s.lastAt)}</span></span></button>`}).join(''):`<div class="cards empty" style="flex:1">セッションが見つかりません</div>`}</div></section>`;
   const lanesHtml=LANES.map(l=>{
     if(l.id==='completed'&&!showDone)return'';
     const items=list.filter(t=>laneOf(t)===l.id).sort((a,b)=>b.updatedAt-a.updatedAt);
@@ -335,7 +336,7 @@ function renderPanel(){
     meta=`<span class="k">${svg('chat')}状態</span><span class="v"><span class="status" style="--sc:${st.color}"><i></i>${st.label}</span></span>
       <span class="k">${svg('folder')}プロジェクト</span><span class="v">${esc(s.project)}<div class="p-hint"><code>${esc(s.cwd)}</code></div></span>
       ${s.branch?`<span class="k">${svg('branch')}ブランチ</span><span class="v"><code>${esc(s.branch)}</code></span>`:''}
-      <span class="k">${svg('bot')}プロセス</span><span class="v">${s.running?`稼働中 · <span class="num">pid ${s.pid}</span>`:'停止（記録のみ）'}</span>
+      <span class="k">${svg('bot')}プロセス</span><span class="v">${hostOf(s)?hostOf(s)+' · ':''}${s.running?`稼働中 · <span class="num">pid ${s.pid}</span>`:'停止（記録のみ）'}</span>
       <span class="k">${svg('doc')}タスク</span><span class="v num">${s.taskCount} 件</span>
       <span class="k">${svg('clock')}開始</span><span class="v num" style="color:var(--ink-2)">${fmt(s.startedAt)}</span>
       <span class="k">${svg('clock')}最終更新</span><span class="v num" style="color:var(--ink-2)">${fmt(s.lastAt)}（${ago(s.lastAt)}）</span>`;
