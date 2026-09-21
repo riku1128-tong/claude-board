@@ -87,6 +87,14 @@ claude-board/
 - 画面の既定テーマはダーク（`localStorage` の `ccb:theme` があればそちら優先。右上のボタンで切替）
 - Windows 自動起動: タスクスケジューラ `ClaudeBoard`（ログオン時、`wscript start-hidden.vbs "<node.exe>"`）。`.vbs` は ANSI で読まれるため ASCII のみで書くこと
 
+## サービスと支出の台帳（2026-09-21）
+
+- `board-spend.json = { entries:[{ id, ts, service, amount|null, currency, note, sessionId, status:"confirmed"|"unconfirmed", source:"user"|"agent"|"scan"|"manual" }] }`。`/api/state.spend` で返し、各 entry に `project` `sessionTitle` を付ける（sessionId から解決）
+- `POST /api/spend`: 追加 / `{update:id,…}` / `{delete:id}`。amount null は「要確認」
+- 記録ルールは `~/.claude/CLAUDE.md`（ユーザーのグローバル設定）に追記済み: 有料サービスの購入・チャージ・新規サービス利用（0 円含む）が起きたらセッション内で curl POST する。JSON は Windows の引数文字化け回避のためファイル経由。`sessionId` は `CLAUDE_CODE_SESSION_ID`
+- 初期データは transcript 全走査で洗い出した（ユーザー申告 4 件 + 検出 5 件）。走査の要点: `message.content` のテキストだけを対象に「購入|チャージ|クレジット|api key|$d」等で grep。tool_result やシステムプロンプトは "aws" "stripe"（ハムスターの縞）等のノイズが多いので除外
+- 画面: 「サービスと支出」セクション（折りたたみ可、`ccb:spend`）。フォーム入力中は refresh でボードを再描画しない
+
 ## 次にやると良いこと（優先順）
 
 1. ~~**Windows 実機確認**~~ 済み（上記）。残: `todos/` `tasks/` があるマシンでのタスク表示確認

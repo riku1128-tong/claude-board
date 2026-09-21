@@ -138,6 +138,14 @@ dialog h3{margin:0 0 12px;font-size:16px}.leg{display:grid;grid-template-columns
 .s-fable{fill:var(--c-fable);background:var(--c-fable)}.s-other{fill:var(--c-other);background:var(--c-other)}
 .chart .hit{stroke:var(--danger);stroke-width:1.5;stroke-dasharray:3 3}.chart .hit-t{font-size:9px;fill:var(--danger);font-weight:700}
 .bar-g:hover .s-fable,.bar-g:hover .s-other{opacity:.8}.stale{color:var(--danger)}
+/* 支出台帳 */
+.spend-sum{display:flex;flex-wrap:wrap;gap:8px;padding:0 12px 10px}
+.svc{background:var(--card);border-radius:12px;padding:8px 12px;min-width:150px;flex:1 1 150px}.svc b{display:block;font-size:12px;color:var(--ink-2);font-weight:500}.svc .amt{font-size:20px;font-weight:700;line-height:1.3}.svc .amt small{font-size:12px;color:var(--ink-3);margin-left:3px}.svc .n{font-size:11px;color:var(--ink-3)}
+.svc.total{background:var(--accent-soft)}.svc.unc .amt{color:var(--ink-3)}
+.spend-t{width:100%;border-collapse:collapse;font-size:12px;margin:0 12px 10px;width:calc(100% - 24px)}.spend-t th{text-align:left;font-weight:500;color:var(--ink-3);padding:4px 8px;border-bottom:1px solid var(--line)}.spend-t td{padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+.spend-t td.r{text-align:right;white-space:nowrap}.spend-t .unc{color:var(--tile-amber-i);font-weight:700;font-size:11px}.spend-t button{color:var(--ink-3);padding:2px 6px;border-radius:6px}.spend-t button:hover{background:var(--accent-soft);color:var(--ink)}.spend-t button svg{width:14px;height:14px}
+.spend-add{display:flex;flex-wrap:wrap;gap:6px;padding:0 12px 4px;align-items:center}.spend-add input,.spend-add select{background:var(--glass-strong);border:1px solid var(--line);border-radius:8px;padding:6px 8px;font-size:12px;outline:none;min-width:0}.spend-add input:focus{border-color:var(--accent)}
+.spend-add .svc-in{flex:1 1 140px}.spend-add .amt-in{width:90px}.spend-add .note-in{flex:2 1 200px}
 .tip{position:fixed;z-index:50;pointer-events:none;background:var(--glass-strong);border:1px solid var(--glass-border);box-shadow:var(--shadow);border-radius:10px;padding:6px 10px;font-size:12px;color:var(--ink);display:none;max-width:300px;line-height:1.5}
 @media (max-width:900px){.charts{grid-template-columns:1fr}}
 </style>
@@ -229,6 +237,23 @@ function hitSummary(hits){
   const today=hits.filter(h=>now-h.t<24*3600e3);
   return today.length?`直近 24 時間で ${today.length} 回制限に到達（最後 ${hm(today[today.length-1].t)}）`:``;
 }
+// ---- サービスと支出（board-spend.json） ----
+const money=(a,c)=>a==null?'—':(c==='JPY'?'¥'+Math.round(a).toLocaleString():(c==='USD'?'$':c+' ')+(Number.isInteger(a)?a:a.toFixed(2)));
+let spendOpen=true;try{spendOpen=localStorage.getItem('ccb:spend')!=='0'}catch(e){}
+function spendSection(){
+  const es=[...((state.spend||{}).entries||[])].sort((a,b)=>b.ts-a.ts);
+  // サービス別合計（通貨別）。未確認（金額 null）は件数だけ数える
+  const by=new Map();for(const e of es){const k=e.service;const o=by.get(k)||{service:k,sums:{},n:0,unc:0,last:0};o.n++;if(e.amount==null)o.unc++;else o.sums[e.currency]=(o.sums[e.currency]||0)+e.amount;o.last=Math.max(o.last,e.ts);by.set(k,o)}
+  const tot={};for(const o of by.values())for(const [c,v] of Object.entries(o.sums))tot[c]=(tot[c]||0)+v;
+  const fmtSums=s=>Object.entries(s).map(([c,v])=>money(v,c)).join(' + ')||'—';
+  const cards=[...by.values()].sort((a,b)=>(Object.values(b.sums)[0]||0)-(Object.values(a.sums)[0]||0)).map(o=>`<div class="svc${o.unc&&!Object.keys(o.sums).length?' unc':''}"><b>${esc(o.service)}</b><div class="amt">${fmtSums(o.sums)}${o.unc?`<small>未確認 ${o.unc}</small>`:''}</div><div class="n">${o.n} 件 · ${ago(o.last)}</div></div>`).join('');
+  const rows=es.map(e=>`<tr><td class="num" style="color:var(--ink-3);white-space:nowrap">${fmt(e.ts)}</td><td><b>${esc(e.service)}</b>${e.status==='unconfirmed'?' <span class="unc">要確認</span>':''}</td><td class="r num">${money(e.amount,e.currency)}</td><td>${esc(e.note)}${e.project?`<div class="p-hint">${esc(e.project)}${e.sessionTitle?' · '+esc(e.sessionTitle.slice(0,40)):''}</div>`:''}</td><td class="r"><button data-sp-del="${e.id}" title="削除">${svg('trash')}</button></td></tr>`).join('');
+  const body=!spendOpen?'':`<div class="spend-sum"><div class="svc total"><b>合計（確認済み）</b><div class="amt">${fmtSums(tot)}</div><div class="n">${es.length} 件 · ${by.size} サービス</div></div>${cards}</div>
+    ${es.length?`<table class="spend-t"><thead><tr><th>日時</th><th>サービス</th><th style="text-align:right">金額</th><th>メモ</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:'<p class="p-hint" style="padding:0 12px 10px">記録はまだありません。</p>'}
+    <form class="spend-add" id="spendAdd"><input class="svc-in" name="service" placeholder="サービス名" required list="svcList"><datalist id="svcList">${[...by.keys()].map(k=>`<option value="${esc(k)}">`).join('')}</datalist><input class="amt-in num" name="amount" type="number" step="0.01" min="0" placeholder="金額（空=未確認）"><select name="currency"><option>USD</option><option>JPY</option></select><input class="note-in" name="note" placeholder="メモ（何に・なぜ）"><button class="btn" type="submit">記録</button></form>`;
+  return`<section class="lane spend" style="--lc:var(--l-done)"><div class="lane-h"><h2>サービスと支出</h2><small>Claude 経由で使った外部サービスと課金の記録（board-spend.json）</small><button class="tb sm" data-spend-toggle>${spendOpen?'折りたたむ':'展開'}</button></div>${body}</section>`;
+}
+async function postSpend(j){const r=await fetch('/api/spend',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(j)});const d=await r.json();if(d.error)toast('エラー: '+d.error);else{await refresh();}return d}
 function barChart(title,buckets,tipLabel,hits){
   const W=600,H=150,P={l:44,r:8,t:18,b:22},iw=W-P.l-P.r,ih=H-P.t-P.b;
   const max=Math.max(1,...buckets.map(b=>b.fable+b.other));
@@ -293,7 +318,7 @@ function renderBoard(){
           <span class="idx num">${i+1}</span>
           <button class="star${bms().includes(t.id)?' on':''}" data-bm="${t.id}" title="ブックマーク">${svg('star')}</button>
         </div>`}).join(''):'該当なし'}</div></section>`}).join('');
-  b.innerHTML=usageSection()+sessHtml+lanesHtml;b.scrollTop=top;
+  b.innerHTML=usageSection()+spendSection()+sessHtml+lanesHtml;b.scrollTop=top;
   const sl=$('#fSess');const cur=sl.value;sl.innerHTML=`<option value="">セッション: すべて</option>`+state.sessions.map(s=>`<option value="${s.id}"${s.id===selSess?' selected':''}>${esc(s.project)} · ${esc(s.title.slice(0,30))}</option>`).join('');
 }
 // 左パネルの対象: 選択中のタスク > 選択中のセッション。付箋はタスクは task.id、セッションは "sess:<id>" をキーに保存
@@ -362,9 +387,16 @@ $('#board').addEventListener('mousemove',e=>{const g=e.target.closest('[data-tip
 $('#board').addEventListener('mouseleave',()=>tip.style.display='none');
 $('#board').addEventListener('click',async e=>{
   const ut=e.target.closest('[data-usage-toggle]');if(ut){usageOpen=!usageOpen;try{localStorage.setItem('ccb:usage',usageOpen?'1':'0')}catch(e){}renderBoard();return}
+  const st=e.target.closest('[data-spend-toggle]');if(st){spendOpen=!spendOpen;try{localStorage.setItem('ccb:spend',spendOpen?'1':'0')}catch(e){}renderBoard();return}
+  const sd=e.target.closest('[data-sp-del]');if(sd){if(confirm('この記録を削除する？'))postSpend({delete:sd.dataset.spDel});return}
   const bm=e.target.closest('[data-bm]');if(bm){const a=bms(),i=a.indexOf(bm.dataset.bm);i>=0?a.splice(i,1):a.push(bm.dataset.bm);render();saveNotes();return}
   const s=e.target.closest('[data-sess]');if(s){selSess=selSess===s.dataset.sess?'':s.dataset.sess;sel=null;try{localStorage.setItem('ccb:sel','')}catch(e){}render();return}
   const c=e.target.closest('.card');if(c)select(c.dataset.id);
+});
+$('#board').addEventListener('submit',async e=>{
+  const f=e.target.closest('#spendAdd');if(!f)return;e.preventDefault();const fd=new FormData(f);
+  const d=await postSpend({service:fd.get('service'),amount:fd.get('amount')===''?null:Number(fd.get('amount')),currency:fd.get('currency'),note:fd.get('note'),source:'manual'});
+  if(d.ok)toast('記録しました');
 });
 $('#board').addEventListener('keydown',e=>{const c=e.target.closest('.card');if(c&&(e.key==='Enter'||e.key===' ')){e.preventDefault();select(c.dataset.id)}});
 $('#panel').addEventListener('click',async e=>{
@@ -391,7 +423,7 @@ async function refresh(){
     state=d;
     const c=$('#conn');c.className='conn '+(d.dirExists?'ok':'ng');
     c.innerHTML=`<b></b><span>${d.dirExists?'ローカル接続':'フォルダ未検出'} <code style="background:none;padding:0">${esc(d.claudeDir)}</code><br>${d.sessions.filter(s=>s.state!=='idle').length} セッション稼働 · タスク ${d.tasks.length} 件 · ${new Date(d.scannedAt).toLocaleTimeString('ja-JP')} 更新</span>`;
-    if(document.activeElement?.id==='noteIn'){renderBoard()}else{render();if(draft&&$('#noteIn'))$('#noteIn').value=draft}
+    if(document.activeElement?.closest?.('#spendAdd')){renderPanel()}else if(document.activeElement?.id==='noteIn'){renderBoard()}else{render();if(draft&&$('#noteIn'))$('#noteIn').value=draft}
   }catch(e){const c=$('#conn');c.className='conn ng';c.innerHTML=`<b></b><span>サーバーに接続できません<br>node server.mjs を起動してください</span>`}
 }
 refresh();

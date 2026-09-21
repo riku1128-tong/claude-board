@@ -6,3 +6,6 @@ board-notes.json
 Thumbs.db
 *.log
 
+
+# 支出台帳（ユーザーデータ）
+board-spend.json

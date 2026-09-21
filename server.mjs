@@ -18,6 +18,7 @@ const PORT = Number(arg('--port', process.env.PORT || 8787));
 const HOSTS = arg('--host', '') ? [arg('--host')] : ['127.0.0.1', '::1'];
 const CLAUDE_DIR = path.resolve(arg('--dir', process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')));
 const NOTES_FILE = path.join(__dirname, 'board-notes.json');
+const SPEND_FILE = path.join(__dirname, 'board-spend.json'); // サービス別の支出台帳（ユーザーデータ）。POST /api/spend で追記
 const ACTIVE_MIN = Number(arg('--active-minutes', 10)); // この分数以内に更新があれば「稼働中」
 const DONE_DAYS = Number(arg('--done-days', 7)); // 完了タスクはこの日数以内のものだけ表示（0 で無制限）。ファイル自体は Claude Code の cleanupPeriodDays（既定30日）で消える
 const toMs = v => v == null ? null : typeof v === 'number' ? (v < 1e11 ? v * 1000 : v) : (Date.parse(v) || null);
@@ -260,6 +261,27 @@ function bucketTokens(events, hits) {
   return { h5, d7, hits: hits.filter(h => h.t >= d7[0].t).sort((a, b) => a.t - b.t), models };
 }
 
+// ---------- spend: Claude 経由で使った外部サービスと金額の台帳 ----------
+// board-spend.json = { entries: [{ id, ts, service, amount|null, currency, note, sessionId, status: "confirmed"|"unconfirmed", source }] }
+// amount は「その時点で発生した額」（チャージ・購入・月額の請求）。null は「金額未確認」。
+let spendCache = null;
+async function readSpend() { if (!spendCache) spendCache = (await readJson(SPEND_FILE)) || { entries: [] }; if (!Array.isArray(spendCache.entries)) spendCache.entries = []; return spendCache; }
+async function writeSpend() { await fsp.writeFile(SPEND_FILE, JSON.stringify(spendCache, null, 2)); cache.at = 0; }
+function normEntry(j) {
+  const service = String(j.service || '').trim(); if (!service) return null;
+  const amount = j.amount == null || j.amount === '' ? null : Number(j.amount); if (amount !== null && Number.isNaN(amount)) return null;
+  const currency = String(j.currency || 'USD').toUpperCase().slice(0, 3);
+  return { id: j.id || Date.now().toString(36) + Math.random().toString(36).slice(2, 6), ts: toMs(j.ts) || Date.now(), service, amount, currency,
+    note: String(j.note || '').slice(0, 300), sessionId: String(j.sessionId || ''), status: j.status === 'unconfirmed' || amount === null ? 'unconfirmed' : 'confirmed', source: String(j.source || 'manual') };
+}
+async function handleSpend(j) {
+  const sp = await readSpend();
+  if (j.delete) { const n = sp.entries.length; sp.entries = sp.entries.filter(e => e.id !== j.delete); if (sp.entries.length === n) return { error: 'not found' }; await writeSpend(); return { ok: true, deleted: j.delete }; }
+  if (j.update) { const e = sp.entries.find(x => x.id === j.update); if (!e) return { error: 'not found' }; const u = normEntry({ ...e, ...j, id: e.id, ts: j.ts ?? e.ts, status: j.status ?? (j.amount != null ? 'confirmed' : e.status) }); if (!u) return { error: 'bad entry' }; Object.assign(e, u); await writeSpend(); return { ok: true, entry: e }; }
+  const e = normEntry(j); if (!e) return { error: 'service は必須、amount は数値か null' };
+  sp.entries.push(e); await writeSpend(); return { ok: true, entry: e };
+}
+
 // ---------- state ----------
 let cache = { at: 0, data: null };
 async function buildState() {
@@ -281,7 +303,9 @@ async function buildState() {
     .sort((a, b) => (b.running - a.running) || (b.lastAt - a.lastAt)).slice(0, 60).map(({ todos, file, pdir, ...rest }) => ({ ...rest, taskCount: tasks.filter(t => t.sessionId === rest.id).length }));
   const notes = (await readJson(NOTES_FILE)) || {};
   const usage = { tokens: await scanTokens(sessions) }; // 制限の % は出さない（statusLine の値は最後の API 応答時点で止まるため、正確でない）
-  const data = { scannedAt: Date.now(), claudeDir: CLAUDE_DIR, dirExists: exists(CLAUDE_DIR), activeMinutes: ACTIVE_MIN, doneDays: DONE_DAYS, sessions: sessArr, tasks, notes, usage };
+  const spend = await readSpend();
+  for (const e of spend.entries) { const s = sessions.get(e.sessionId); e.sessionTitle = s ? s.title : ''; e.project = s ? s.project : ''; }
+  const data = { scannedAt: Date.now(), claudeDir: CLAUDE_DIR, dirExists: exists(CLAUDE_DIR), activeMinutes: ACTIVE_MIN, doneDays: DONE_DAYS, sessions: sessArr, tasks, notes, usage, spend };
   cache = { at: Date.now(), data };
   return data;
 }
@@ -297,6 +321,15 @@ async function handle(req, res) {
       if (!j || typeof j !== 'object') { res.writeHead(400); return res.end('bad json'); }
       await fsp.writeFile(NOTES_FILE, JSON.stringify(j, null, 2)); cache.at = 0;
       res.writeHead(200, { 'content-type': 'application/json' }); return res.end('{"ok":true}');
+    }
+    if (url.pathname === '/api/spend') { // 支出台帳。GET で一覧、POST で追加 / {update:id,…} / {delete:id}
+      if (req.method === 'GET') { res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }); return res.end(JSON.stringify(await readSpend())); }
+      if (req.method === 'POST') {
+        let body = ''; for await (const c of req) body += c; const j = safeJson(body);
+        if (!j || typeof j !== 'object') { res.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' }); return res.end('bad json'); }
+        const r = await handleSpend(j);
+        res.writeHead(r.error ? 400 : 200, { 'content-type': 'application/json; charset=utf-8' }); return res.end(JSON.stringify(r));
+      }
     }
     if (url.pathname === '/api/events') { // SSE: ファイル更新を軽く通知
       res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' });
