@@ -77,18 +77,14 @@ claude-board/
   - セッション詳細パネル: セッションカード／セレクトで選ぶと左に状態・cwd・ブランチ・pid・開始/最終更新・直近の発話・付箋（`sess:<id>` キー）を表示。閉じるボタンの svg サイズ未指定バグも修正。
   - 完了タスクの保持: `--done-days`（既定 7、0 で無制限）より古い完了は `/api/state` から省く。`~/.claude/tasks/` 自体は Claude Code の `cleanupPeriodDays`（既定 30 日）で pending も含めて削除される。`status: deleted` はファイル即削除。`tasks/<session>/` には `.lock` `.highwatermark` の隠しファイルがある（無視）。
 
-## 使用量セクション（2026-09-21 追加）
+## トークン消費セクション（2026-09-21）
 
-- `/api/state.usage = { source, at, plan, windows:[{key,label,pct,resetsAt}], history:[{at,w:{key:pct}}], tokens:{h5,d7,hits,models} }`
-- **% の取得経路は 2 つ**（`normalizeUsage()` が両方を同じ形に正規化）:
-  1. `usage-latest.json` に statusLine の stdin JSON（`rate_limits.five_hour/seven_day/spend_limit`）が書かれる。settings.json の statusLine `cat > <board>/usage-latest.json`。**デスクトップアプリのセッションでは statusLine が実行されないことを確認済み**（hook の入力にも rate_limits は無い）。ドキュメント上 per-model 週間枠（Fable）は statusLine には無い
-  2. `POST /api/usage` にデスクトップの `get_usage` 出力（`{plan:{windows:[{label,percentUsed,resetsAt}]}}` or `{windows:[…]}`）を送る。ラベルから `five_hour` / `seven_day` / `seven_day_<model>` キーを推定
-- 履歴は `usage-history.json`（14 日、値が変わった時 or 30 分ごとに 1 点）。メーターの sparkline に使用
-- トークン集計は transcript を **前回位置から差分読み**（`tokenCache`、追記前提・縮んだら全読み）。assistant 行は content ブロックごとに複数行に分かれ `message.usage` が重複するので `message.id` で重複排除。`model === "<synthetic>"` は制限ヒット等の擬似メッセージなので除外し、`quotaLimits.status === "rejected"` を「制限に当たった」印に使う
-- 色: Fable `--c-fable` / その他 `--c-other`（light #3f6fe8/#d99a2b, dark #6a8ff2/#bd8a2c。dataviz の validate_palette.js で CVD 検証済み）。メーターは accent → amber(70%) → red(90%)、トラックは同ランプの薄色
-- **方針（ユーザー決定 2026-09-21）: % の取得にトークンを使わない。** セッション内 cron で `get_usage` → POST する案は試したが、1 回あたりモデル呼び出し 3 回・キャッシュ読取 ~1M トークン（会話の長いセッションだったため）で本末転倒だったので廃止。無料の経路は statusLine（ターミナルの claude）のみ。デスクトップでは % は出さず、代わりに transcript の `quotaLimits`（制限ヒット・resetsAt）から「制限に到達／リセット時刻」を 5h 枠に表示する
-- `readUsage()` はリセット時刻を過ぎた枠を落とす。画面は 1 時間以上古い値を薄く表示
-- 将来の候補: デスクトップアプリが statusLine 相当を実行するようになったら自動で復活する。OAuth の usage API を直接叩く案は認証情報の扱いが必要なので見送り
+- `/api/state.usage.tokens = { h5:[{t,fable,other,cached}×20], d7:[…×7], hits:[{t,type,resetsAt}], models:{model:tokens} }`
+- transcript を **前回位置から差分読み**（`tokenCache`、追記前提・縮んだら全読み）。assistant 行は content ブロックごとに複数行に分かれ `message.usage` が重複するので `message.id` で重複排除。`model === "<synthetic>"` は制限ヒット等の擬似メッセージなので除外し、`quotaLimits.status === "rejected"` を「制限に当たった」印に使う
+- 色: Fable `--c-fable` / その他 `--c-other`（light #3f6fe8/#d99a2b, dark #6a8ff2/#bd8a2c。dataviz の validate_palette.js で CVD 検証済み）
+- **使用率 % のメーターは作って消した（経緯）**: ① セッション内 cron で `get_usage` → POST は 1 回あたりキャッシュ読取 ~1M トークンで本末転倒。② ターミナル claude の statusLine（`rate_limits`）はトークン消費ゼロだが、値は「そのセッションが最後に受けた API 応答」で止まり、他セッションの消費を反映しない（実測: ファイルは 60 秒ごとに書かれるが値は不変）。③ モデル別の週間枠（Fable）は statusLine に来ない。→ 古い数字は誤情報になるので、ユーザー判断で % 表示自体を廃止。`~/.claude` 外に % を書く経路も無い
+- 画面の既定テーマはダーク（`localStorage` の `ccb:theme` があればそちら優先。右上のボタンで切替）
+- Windows 自動起動: タスクスケジューラ `ClaudeBoard`（ログオン時、`wscript start-hidden.vbs "<node.exe>"`）。`.vbs` は ANSI で読まれるため ASCII のみで書くこと
 
 ## 次にやると良いこと（優先順）
 

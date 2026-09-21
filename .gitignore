@@ -6,8 +6,3 @@ board-notes.json
 Thumbs.db
 *.log
 
-# statusLine から書き込まれる使用量データ（ユーザーデータ）
-usage-latest.json
-usage-history.json
-usage-manual.json
-server.log

@@ -130,13 +130,6 @@ dialog h3{margin:0 0 12px;font-size:16px}.leg{display:grid;grid-template-columns
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 /* 使用量セクション: メーター（同一ランプの薄い色をトラックに）＋積み上げ棒グラフ */
 .usage .lane-h small{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.tb.sm{padding:4px 10px;font-size:12px}
-.meters{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;padding:0 12px 10px}
-.meter{background:var(--card);border-radius:14px;padding:12px 14px;--fill:var(--accent);--track:var(--accent-soft)}
-.meter.sev-warn{--fill:var(--tile-amber-i);--track:var(--tile-amber)}.meter.sev-danger{--fill:var(--tile-red-i);--track:var(--tile-red)}.meter.sev-none{--fill:var(--ink-3);--track:var(--tile-gray)}
-.m-l{font-size:12px;color:var(--ink-2);font-weight:500}.m-v{font-size:28px;font-weight:700;line-height:1.2;margin:2px 0 8px;display:flex;align-items:flex-end;gap:10px}.m-v small{font-size:14px;color:var(--ink-2);margin-left:2px}.m-v .dim{color:var(--ink-3)}
-.m-v .spark{width:96px;height:24px;color:var(--fill);margin-left:auto;opacity:.8;flex:none}
-.meter .bar{height:8px;border-radius:4px;background:var(--track);overflow:hidden}.meter .bar i{display:block;height:100%;border-radius:4px;background:var(--fill);transition:width .4s}
-.m-f{font-size:11px;color:var(--ink-3);margin-top:8px;min-height:14px}.meter.is-stale .m-v,.meter.is-stale .bar{opacity:.45}
 .legend{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:0 14px 8px;font-size:12px;color:var(--ink-2)}.legend .sw{width:10px;height:10px;border-radius:3px;display:inline-block}.legend .dim{color:var(--ink-3);font-size:11px}
 .charts{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:0 12px 12px}
 .chart{background:var(--card);border-radius:14px;padding:10px 12px 6px;min-width:0}.c-t{font-size:12px;font-weight:700;color:var(--ink-2);margin-bottom:4px}
@@ -145,7 +138,7 @@ dialog h3{margin:0 0 12px;font-size:16px}.leg{display:grid;grid-template-columns
 .chart .hit{stroke:var(--danger);stroke-width:1.5;stroke-dasharray:3 3}.chart .hit-t{font-size:9px;fill:var(--danger);font-weight:700}
 .bar-g:hover .s-fable,.bar-g:hover .s-other{opacity:.8}.stale{color:var(--danger)}
 .tip{position:fixed;z-index:50;pointer-events:none;background:var(--glass-strong);border:1px solid var(--glass-border);box-shadow:var(--shadow);border-radius:10px;padding:6px 10px;font-size:12px;color:var(--ink);display:none;max-width:300px;line-height:1.5}
-@media (max-width:900px){.meters,.charts{grid-template-columns:1fr}}
+@media (max-width:900px){.charts{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -214,7 +207,7 @@ function fmt(ts){if(!ts)return'—';const d=new Date(ts),p=n=>String(n).padStart
 function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('show'),1800)}
 
 let state={sessions:[],tasks:[],notes:{}},sel=null,selSess='',tab='notes',view='board',showDone=true;
-try{const th=localStorage.getItem('ccb:theme');if(th)document.documentElement.dataset.theme=th;sel=localStorage.getItem('ccb:sel')||null}catch(e){}
+try{const th=localStorage.getItem('ccb:theme');document.documentElement.dataset.theme=th||'dark';sel=localStorage.getItem('ccb:sel')||null}catch(e){}
 const notes=()=>state.notes.notes||(state.notes.notes={});
 const bms=()=>state.notes.bookmarks||(state.notes.bookmarks=[]);
 async function saveNotes(){await fetch('/api/notes',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(state.notes)})}
@@ -227,22 +220,12 @@ const hm=ts=>{const d=new Date(ts),p=n=>String(n).padStart(2,'0');return`${p(d.g
 const md=ts=>{const d=new Date(ts);return`${d.getMonth()+1}/${d.getDate()}`};
 function untilTxt(ts){const m=Math.max(0,Math.round((ts-Date.now())/60000));if(m<60)return`あと ${m} 分`;if(m<1440)return`あと ${Math.floor(m/60)} 時間${m%60?` ${m%60} 分`:''}`;return`あと ${Math.floor(m/1440)} 日 ${Math.floor(m%1440/60)} 時間`}
 let usageOpen=true;try{usageOpen=localStorage.getItem('ccb:usage')!=='0'}catch(e){}
-function meterTile(key,fallbackLabel,u,hist,fallbackFoot){
-  const w=u?.windows.find(x=>x.key===key)||(key==='seven_day_fable'?u?.windows.find(x=>/^seven_day_./.test(x.key)):null);
-  const pct=w?Math.max(0,Math.min(100,w.pct)):null;
-  const wAt=w?(w.at&&w.at!==u.at?w.at:(u.valuesAt||u.at)):null,stale=!!wAt&&Date.now()-wAt>60*60e3; // 値が最後に変わった時刻で判定。1 時間以上変化が無ければ薄く表示
-  const sev=pct==null?'none':pct>=90?'danger':pct>=70?'warn':'ok';
-  const pts=w?hist.filter(h=>h.w[w.key]!=null).slice(-24):[];
-  const spark=pts.length>=2?`<svg class="spark" viewBox="0 0 96 24" aria-hidden="true"><polyline fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" points="${pts.map((h,i)=>`${(i/(pts.length-1)*94+1).toFixed(1)},${(23-h.w[w.key]/100*22).toFixed(1)}`).join(' ')}"/></svg>`:'';
-  const foot=w?`${w.resetsAt?`リセット ${fmt(w.resetsAt)}（${untilTxt(w.resetsAt)}）`:''}${stale?` · <span class="stale">${ago(wAt)}の値</span>`:''}`:(fallbackFoot||'データなし');
-  return`<div class="meter sev-${sev}${stale?' is-stale':''}"><div class="m-l">${esc(w?.label||fallbackLabel)}</div><div class="m-v">${pct==null?'<span class="dim">—</span>':`<span>${Math.round(pct)}<small>%</small></span>`}${spark}</div><div class="bar"><i style="width:${pct??0}%"></i></div><div class="m-f">${foot}</div></div>`;
-}
-// % が取れない環境（デスクトップアプリ）向けの無料の代替: 制限に当たった記録から「今の 5 時間枠」の状況を出す
-function hitFoot(hits){
+// 制限に当たった記録（transcript の quotaLimits）から、今の 5 時間枠の状況を出す。これはローカルの事実なので正確
+function hitSummary(hits){
   const now=Date.now(),live=hits.filter(h=>h.resetsAt&&h.resetsAt>now);
-  if(live.length){const r=Math.max(...live.map(h=>h.resetsAt));return`<span class="stale">制限に到達</span> · リセット ${fmt(r)}（${untilTxt(r)}）`}
+  if(live.length){const r=Math.max(...live.map(h=>h.resetsAt));return`<span class="stale">5時間制限に到達</span> · リセット ${fmt(r)}（${untilTxt(r)}）`}
   const today=hits.filter(h=>now-h.t<24*3600e3);
-  return today.length?`直近 24 時間で ${today.length} 回制限に到達（最後 ${hm(today[today.length-1].t)}）`:'% はターミナルの claude からのみ取得（README「使用量」）';
+  return today.length?`直近 24 時間で ${today.length} 回制限に到達（最後 ${hm(today[today.length-1].t)}）`:``;
 }
 function barChart(title,buckets,tipLabel,hits){
   const W=600,H=150,P={l:44,r:8,t:18,b:22},iw=W-P.l-P.r,ih=H-P.t-P.b;
@@ -263,15 +246,13 @@ function barChart(title,buckets,tipLabel,hits){
   return`<div class="chart"><div class="c-t">${title}</div><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${title}">${grid}<line x1="${P.l}" x2="${W-P.r}" y1="${y(0)}" y2="${y(0)}" class="base"/>${bars}${hm2}${xl}</svg></div>`;
 }
 function usageSection(){
-  const U=state.usage||{},u=U.windows?U:null,hist=U.history||[],tk=U.tokens||{h5:[],d7:[],hits:[]};
+  const tk=(state.usage||{}).tokens||{h5:[],d7:[],hits:[]};
   const h5=tk.h5.map((b,i)=>({...b,lab:i%4===0?hm(b.t):''})),d7=tk.d7.map(b=>({...b,lab:md(b.t)}));
   const wf=d7.reduce((s,b)=>s+b.fable,0),wo=d7.reduce((s,b)=>s+b.other,0);
-  const vAt=u?.valuesAt||u?.at,lag=u&&u.at-vAt>10*60e3; // ファイルは新しいのに値が古い＝ターミナルの claude がその後 API と話していない
-  const meta=u?`${u.plan?esc(u.plan)+' · ':''}${{statusline:'ステータスライン','statusline+manual':'ステータスライン＋手入力',manual:'手入力'}[u.source]||u.source} · 値の更新 ${hm(vAt)}（${ago(vAt)}）${lag?' <span class="stale" title="ステータスラインの % は、そのターミナルの claude が最後に API 応答を受けた時点の値です。そのセッションで何か送ると更新されます">· 以後 API 応答なし</span>':''}`:'% は未取得 · グラフはローカル集計（トークン消費なし）';
-  const body=!usageOpen?'':`<div class="meters">${meterTile('five_hour','5時間制限',u,hist,hitFoot(tk.hits))}${meterTile('seven_day','週間・全モデル',u,hist,`今週の新規トークン ${fmtTok(wf+wo)}`)}${meterTile('seven_day_fable','週間・Fable',u,hist,`今週の Fable 新規トークン ${fmtTok(wf)}`)}</div>
-    <div class="legend"><i class="sw s-fable"></i>Fable <i class="sw s-other"></i>その他のモデル <span class="dim">棒＝新規トークン（入力＋キャッシュ作成＋出力）。キャッシュ読取は含めず、ホバーで表示。今週: Fable ${fmtTok(wf)} / その他 ${fmtTok(wo)}</span></div>
+  const hs=hitSummary(tk.hits);
+  const body=!usageOpen?'':`<div class="legend"><i class="sw s-fable"></i>Fable <i class="sw s-other"></i>その他のモデル <span class="dim">棒＝新規トークン（入力＋キャッシュ作成＋出力）。キャッシュ読取は含めず、ホバーで表示。直近 ${d7.length} 日: Fable ${fmtTok(wf)} / その他 ${fmtTok(wo)}</span></div>
     <div class="charts">${barChart('直近 5 時間（15 分ごと）',h5,b=>`${hm(b.t)}–${hm(b.t+15*60e3)}`,tk.hits)}${barChart(`直近 ${d7.length} 日（日ごと）`,d7,b=>md(b.t),tk.hits)}</div>`;
-  return`<section class="lane usage" style="--lc:var(--l-active)"><div class="lane-h"><h2>使用量</h2><small>${meta}</small><button class="tb sm" data-usage-toggle>${usageOpen?'折りたたむ':'展開'}</button></div>${body}</section>`;
+  return`<section class="lane usage" style="--lc:var(--l-active)"><div class="lane-h"><h2>トークン消費</h2><small>${hs||'セッション記録からローカル集計（トークン消費なし）'}</small><button class="tb sm" data-usage-toggle>${usageOpen?'折りたたむ':'展開'}</button></div>${body}</section>`;
 }
 function tileFor(t){const l=laneOf(t);const c={in_progress:['blue','spin'],blocked:['red','lock'],pending:['amber','doc'],completed:['green','check']}[l];return{style:`--t-bg:var(--tile-${c[0]});--t-i:var(--tile-${c[0]}-i)`,icon:c[1]}}
 function filtered(){
