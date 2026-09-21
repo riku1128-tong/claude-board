@@ -230,7 +230,7 @@ let usageOpen=true;try{usageOpen=localStorage.getItem('ccb:usage')!=='0'}catch(e
 function meterTile(key,fallbackLabel,u,hist,fallbackFoot){
   const w=u?.windows.find(x=>x.key===key)||(key==='seven_day_fable'?u?.windows.find(x=>/^seven_day_./.test(x.key)):null);
   const pct=w?Math.max(0,Math.min(100,w.pct)):null;
-  const wAt=w?.at||u?.at,stale=!!wAt&&Date.now()-wAt>60*60e3; // 1 時間以上更新が無ければ値を薄く表示（枠ごとに判定）
+  const wAt=w?(w.at&&w.at!==u.at?w.at:(u.valuesAt||u.at)):null,stale=!!wAt&&Date.now()-wAt>60*60e3; // 値が最後に変わった時刻で判定。1 時間以上変化が無ければ薄く表示
   const sev=pct==null?'none':pct>=90?'danger':pct>=70?'warn':'ok';
   const pts=w?hist.filter(h=>h.w[w.key]!=null).slice(-24):[];
   const spark=pts.length>=2?`<svg class="spark" viewBox="0 0 96 24" aria-hidden="true"><polyline fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" points="${pts.map((h,i)=>`${(i/(pts.length-1)*94+1).toFixed(1)},${(23-h.w[w.key]/100*22).toFixed(1)}`).join(' ')}"/></svg>`:'';
@@ -266,7 +266,8 @@ function usageSection(){
   const U=state.usage||{},u=U.windows?U:null,hist=U.history||[],tk=U.tokens||{h5:[],d7:[],hits:[]};
   const h5=tk.h5.map((b,i)=>({...b,lab:i%4===0?hm(b.t):''})),d7=tk.d7.map(b=>({...b,lab:md(b.t)}));
   const wf=d7.reduce((s,b)=>s+b.fable,0),wo=d7.reduce((s,b)=>s+b.other,0);
-  const meta=u?`${u.plan?esc(u.plan)+' · ':''}${{statusline:'ステータスライン','statusline+manual':'ステータスライン＋手入力',manual:'手入力'}[u.source]||u.source} · ${ago(u.at)}に取得`:'% は未取得 · グラフはローカル集計（トークン消費なし）';
+  const vAt=u?.valuesAt||u?.at,lag=u&&u.at-vAt>10*60e3; // ファイルは新しいのに値が古い＝ターミナルの claude がその後 API と話していない
+  const meta=u?`${u.plan?esc(u.plan)+' · ':''}${{statusline:'ステータスライン','statusline+manual':'ステータスライン＋手入力',manual:'手入力'}[u.source]||u.source} · 値の更新 ${hm(vAt)}（${ago(vAt)}）${lag?' <span class="stale" title="ステータスラインの % は、そのターミナルの claude が最後に API 応答を受けた時点の値です。そのセッションで何か送ると更新されます">· 以後 API 応答なし</span>':''}`:'% は未取得 · グラフはローカル集計（トークン消費なし）';
   const body=!usageOpen?'':`<div class="meters">${meterTile('five_hour','5時間制限',u,hist,hitFoot(tk.hits))}${meterTile('seven_day','週間・全モデル',u,hist,`今週の新規トークン ${fmtTok(wf+wo)}`)}${meterTile('seven_day_fable','週間・Fable',u,hist,`今週の Fable 新規トークン ${fmtTok(wf)}`)}</div>
     <div class="legend"><i class="sw s-fable"></i>Fable <i class="sw s-other"></i>その他のモデル <span class="dim">棒＝新規トークン（入力＋キャッシュ作成＋出力）。キャッシュ読取は含めず、ホバーで表示。今週: Fable ${fmtTok(wf)} / その他 ${fmtTok(wo)}</span></div>
     <div class="charts">${barChart('直近 5 時間（15 分ごと）',h5,b=>`${hm(b.t)}–${hm(b.t+15*60e3)}`,tk.hits)}${barChart(`直近 ${d7.length} 日（日ごと）`,d7,b=>md(b.t),tk.hits)}</div>`;

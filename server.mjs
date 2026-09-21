@@ -338,7 +338,12 @@ async function buildState() {
     .sort((a, b) => (b.running - a.running) || (b.lastAt - a.lastAt)).slice(0, 60).map(({ todos, file, pdir, ...rest }) => ({ ...rest, taskCount: tasks.filter(t => t.sessionId === rest.id).length }));
   const notes = (await readJson(NOTES_FILE)) || {};
   const latest = await readUsage();
-  const usage = { ...(latest || { source: '', at: null, plan: '', windows: null }), history: await recordUsage(latest), tokens: await scanTokens(sessions) };
+  const history = await recordUsage(latest);
+  // statusLine の rate_limits は「そのセッションが最後に受け取った API 応答」の値で、ファイルの更新時刻より古いことがある。
+  // 履歴から「値が最後に変わった時刻」を求めて valuesAt として返す（画面はこちらを「取得時刻」として出す）
+  let valuesAt = latest?.at || null;
+  for (let i = history.length - 1; i > 0; i--) { if (JSON.stringify(history[i].w) !== JSON.stringify(history[i - 1].w)) { valuesAt = history[i].at; break; } if (i === 1) valuesAt = history[0].at; }
+  const usage = { ...(latest || { source: '', at: null, plan: '', windows: null }), valuesAt, history, tokens: await scanTokens(sessions) };
   const data = { scannedAt: Date.now(), claudeDir: CLAUDE_DIR, dirExists: exists(CLAUDE_DIR), activeMinutes: ACTIVE_MIN, doneDays: DONE_DAYS, sessions: sessArr, tasks, notes, usage };
   cache = { at: Date.now(), data };
   return data;
