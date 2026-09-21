@@ -86,7 +86,9 @@ claude-board/
 - 履歴は `usage-history.json`（14 日、値が変わった時 or 30 分ごとに 1 点）。メーターの sparkline に使用
 - トークン集計は transcript を **前回位置から差分読み**（`tokenCache`、追記前提・縮んだら全読み）。assistant 行は content ブロックごとに複数行に分かれ `message.usage` が重複するので `message.id` で重複排除。`model === "<synthetic>"` は制限ヒット等の擬似メッセージなので除外し、`quotaLimits.status === "rejected"` を「制限に当たった」印に使う
 - 色: Fable `--c-fable` / その他 `--c-other`（light #3f6fe8/#d99a2b, dark #6a8ff2/#bd8a2c。dataviz の validate_palette.js で CVD 検証済み）。メーターは accent → amber(70%) → red(90%)、トラックは同ランプの薄色
-- デスクトップ利用時の自動更新: Claude Code セッション内の `CronCreate`（10 分ごと、`3-59/10 * * * *`）で `get_usage` → `POST /api/usage`。セッション限定・7 日で期限切れなので、恒久化したければ Claude Code 側に statusLine 相当がデスクトップで動く日を待つか、統合の別手段（OAuth の usage API を叩く等 — 認証情報の扱いが必要なので現状は見送り）
+- **方針（ユーザー決定 2026-09-21）: % の取得にトークンを使わない。** セッション内 cron で `get_usage` → POST する案は試したが、1 回あたりモデル呼び出し 3 回・キャッシュ読取 ~1M トークン（会話の長いセッションだったため）で本末転倒だったので廃止。無料の経路は statusLine（ターミナルの claude）のみ。デスクトップでは % は出さず、代わりに transcript の `quotaLimits`（制限ヒット・resetsAt）から「制限に到達／リセット時刻」を 5h 枠に表示する
+- `readUsage()` はリセット時刻を過ぎた枠を落とす。画面は 1 時間以上古い値を薄く表示
+- 将来の候補: デスクトップアプリが statusLine 相当を実行するようになったら自動で復活する。OAuth の usage API を直接叩く案は認証情報の扱いが必要なので見送り
 
 ## 次にやると良いこと（優先順）
 

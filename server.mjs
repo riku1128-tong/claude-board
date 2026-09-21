@@ -203,10 +203,12 @@ async function scanTasks(sessions) {
 function normStatus(s) { s = String(s || 'pending').toLowerCase(); if (/progress|active|doing/.test(s)) return 'in_progress'; if (/complete|done|resolved|closed/.test(s)) return 'completed'; if (/delete|cancel/.test(s)) return 'deleted'; return 'pending'; }
 
 // ---------- usage: レート制限の %（usage-latest.json） ----------
-// 受け付ける形式は 2 つ:
+// 方針: % の取得にトークンを使わない。受け付ける形式は 2 つ:
 //   1. Claude Code の statusLine に渡される stdin JSON（rate_limits.five_hour / seven_day / …）。settings.json の statusLine で
-//      `cat > <このフォルダ>/usage-latest.json` とすれば自動で更新される（ターミナルの claude のみ。デスクトップアプリは statusLine を実行しない）
-//   2. POST /api/usage の {windows:[{label, percentUsed, resetsAt}]}（デスクトップの get_usage の出力そのまま、または {plan:{windows}} で包んだもの）
+//      `cat > <このフォルダ>/usage-latest.json` とすれば自動で更新される。statusLine はローカル実行でトークンを消費しない
+//      （ターミナルの claude のみ。デスクトップアプリは statusLine を実行しない）
+//   2. POST /api/usage の {windows:[{label, percentUsed, resetsAt}]}。手動用。Claude に頼むと 1 ターン分のトークンを使うので、
+//      自動化（cron 等）には使わないこと
 const WINDOW_LABELS = { five_hour: '5時間制限', seven_day: '週間・全モデル', spend_limit: '追加利用（支出上限）' };
 function windowKey(label) {
   const l = String(label || '').toLowerCase();
@@ -233,7 +235,10 @@ function normalizeUsage(j) {
 async function readUsage() {
   const st = await stat(USAGE_FILE); if (!st) return null;
   const u = normalizeUsage(await readJson(USAGE_FILE)); if (!u) return null;
-  u.at = u.at || st.mtimeMs; return u;
+  u.at = u.at || st.mtimeMs;
+  // リセット時刻を過ぎた枠は、その後の値が分からないので落とす（Claude Code の statusLine も同じ挙動）
+  u.windows = u.windows.filter(w => !w.resetsAt || w.resetsAt > Date.now());
+  return u.windows.length ? u : null;
 }
 let histCache = null;
 async function recordUsage(u) {

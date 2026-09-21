@@ -136,7 +136,7 @@ dialog h3{margin:0 0 12px;font-size:16px}.leg{display:grid;grid-template-columns
 .m-l{font-size:12px;color:var(--ink-2);font-weight:500}.m-v{font-size:28px;font-weight:700;line-height:1.2;margin:2px 0 8px;display:flex;align-items:flex-end;gap:10px}.m-v small{font-size:14px;color:var(--ink-2);margin-left:2px}.m-v .dim{color:var(--ink-3)}
 .m-v .spark{width:96px;height:24px;color:var(--fill);margin-left:auto;opacity:.8;flex:none}
 .meter .bar{height:8px;border-radius:4px;background:var(--track);overflow:hidden}.meter .bar i{display:block;height:100%;border-radius:4px;background:var(--fill);transition:width .4s}
-.m-f{font-size:11px;color:var(--ink-3);margin-top:8px;min-height:14px}
+.m-f{font-size:11px;color:var(--ink-3);margin-top:8px;min-height:14px}.meter.is-stale .m-v,.meter.is-stale .bar{opacity:.45}
 .legend{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:0 14px 8px;font-size:12px;color:var(--ink-2)}.legend .sw{width:10px;height:10px;border-radius:3px;display:inline-block}.legend .dim{color:var(--ink-3);font-size:11px}
 .charts{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:0 12px 12px}
 .chart{background:var(--card);border-radius:14px;padding:10px 12px 6px;min-width:0}.c-t{font-size:12px;font-weight:700;color:var(--ink-2);margin-bottom:4px}
@@ -230,11 +230,19 @@ let usageOpen=true;try{usageOpen=localStorage.getItem('ccb:usage')!=='0'}catch(e
 function meterTile(key,fallbackLabel,u,hist,fallbackFoot){
   const w=u?.windows.find(x=>x.key===key)||(key==='seven_day_fable'?u?.windows.find(x=>/^seven_day_./.test(x.key)):null);
   const pct=w?Math.max(0,Math.min(100,w.pct)):null;
+  const stale=!!u&&Date.now()-u.at>60*60e3; // 1 時間以上更新が無ければ値を薄く表示
   const sev=pct==null?'none':pct>=90?'danger':pct>=70?'warn':'ok';
   const pts=w?hist.filter(h=>h.w[w.key]!=null).slice(-24):[];
   const spark=pts.length>=2?`<svg class="spark" viewBox="0 0 96 24" aria-hidden="true"><polyline fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" points="${pts.map((h,i)=>`${(i/(pts.length-1)*94+1).toFixed(1)},${(23-h.w[w.key]/100*22).toFixed(1)}`).join(' ')}"/></svg>`:'';
-  const foot=w?(w.resetsAt?`リセット ${fmt(w.resetsAt)}（${untilTxt(w.resetsAt)}）`:''):(fallbackFoot||'データなし');
-  return`<div class="meter sev-${sev}"><div class="m-l">${esc(w?.label||fallbackLabel)}</div><div class="m-v">${pct==null?'<span class="dim">—</span>':`<span>${Math.round(pct)}<small>%</small></span>`}${spark}</div><div class="bar"><i style="width:${pct??0}%"></i></div><div class="m-f">${foot}</div></div>`;
+  const foot=w?`${w.resetsAt?`リセット ${fmt(w.resetsAt)}（${untilTxt(w.resetsAt)}）`:''}${stale?` · <span class="stale">${ago(u.at)}の値</span>`:''}`:(fallbackFoot||'データなし');
+  return`<div class="meter sev-${sev}${stale?' is-stale':''}"><div class="m-l">${esc(w?.label||fallbackLabel)}</div><div class="m-v">${pct==null?'<span class="dim">—</span>':`<span>${Math.round(pct)}<small>%</small></span>`}${spark}</div><div class="bar"><i style="width:${pct??0}%"></i></div><div class="m-f">${foot}</div></div>`;
+}
+// % が取れない環境（デスクトップアプリ）向けの無料の代替: 制限に当たった記録から「今の 5 時間枠」の状況を出す
+function hitFoot(hits){
+  const now=Date.now(),live=hits.filter(h=>h.resetsAt&&h.resetsAt>now);
+  if(live.length){const r=Math.max(...live.map(h=>h.resetsAt));return`<span class="stale">制限に到達</span> · リセット ${fmt(r)}（${untilTxt(r)}）`}
+  const today=hits.filter(h=>now-h.t<24*3600e3);
+  return today.length?`直近 24 時間で ${today.length} 回制限に到達（最後 ${hm(today[today.length-1].t)}）`:'% はターミナルの claude からのみ取得（README「使用量」）';
 }
 function barChart(title,buckets,tipLabel,hits){
   const W=600,H=150,P={l:44,r:8,t:18,b:22},iw=W-P.l-P.r,ih=H-P.t-P.b;
@@ -258,8 +266,8 @@ function usageSection(){
   const U=state.usage||{},u=U.windows?U:null,hist=U.history||[],tk=U.tokens||{h5:[],d7:[],hits:[]};
   const h5=tk.h5.map((b,i)=>({...b,lab:i%4===0?hm(b.t):''})),d7=tk.d7.map(b=>({...b,lab:md(b.t)}));
   const wf=d7.reduce((s,b)=>s+b.fable,0),wo=d7.reduce((s,b)=>s+b.other,0);
-  const meta=u?`${u.plan?esc(u.plan)+' · ':''}${u.source==='statusline'?'ステータスライン':'手動送信'} · ${ago(u.at)}に取得${Date.now()-u.at>15*60e3?' <b class="stale">（古い）</b>':''}`:'制限の % は未取得（README「使用量」参照）';
-  const body=!usageOpen?'':`<div class="meters">${meterTile('five_hour','5時間制限',u,hist)}${meterTile('seven_day','週間・全モデル',u,hist)}${meterTile('seven_day_fable','週間・Fable',u,hist,`今週の Fable 新規トークン ${fmtTok(wf)}`)}</div>
+  const meta=u?`${u.plan?esc(u.plan)+' · ':''}${u.source==='statusline'?'ステータスライン':'手動送信'} · ${ago(u.at)}に取得`:'% は未取得 · グラフはローカル集計（トークン消費なし）';
+  const body=!usageOpen?'':`<div class="meters">${meterTile('five_hour','5時間制限',u,hist,hitFoot(tk.hits))}${meterTile('seven_day','週間・全モデル',u,hist,`今週の新規トークン ${fmtTok(wf+wo)}`)}${meterTile('seven_day_fable','週間・Fable',u,hist,`今週の Fable 新規トークン ${fmtTok(wf)}`)}</div>
     <div class="legend"><i class="sw s-fable"></i>Fable <i class="sw s-other"></i>その他のモデル <span class="dim">棒＝新規トークン（入力＋キャッシュ作成＋出力）。キャッシュ読取は含めず、ホバーで表示。今週: Fable ${fmtTok(wf)} / その他 ${fmtTok(wo)}</span></div>
     <div class="charts">${barChart('直近 5 時間（15 分ごと）',h5,b=>`${hm(b.t)}–${hm(b.t+15*60e3)}`,tk.hits)}${barChart(`直近 ${d7.length} 日（日ごと）`,d7,b=>md(b.t),tk.hits)}</div>`;
   return`<section class="lane usage" style="--lc:var(--l-active)"><div class="lane-h"><h2>使用量</h2><small>${meta}</small><button class="tb sm" data-usage-toggle>${usageOpen?'折りたたむ':'展開'}</button></div>${body}</section>`;

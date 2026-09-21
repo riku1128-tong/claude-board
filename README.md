@@ -49,30 +49,27 @@ Windows は PowerShell / コマンドプロンプトから同じコマンドで�
 
 ## 使用量（レート制限メーターとトークン消費グラフ）
 
-ボード最上段の「使用量」には 2 種類の情報が出ます。
+ボード最上段の「使用量」には 2 種類の情報が出ます。**方針: 使用量の表示のためにトークンを消費しない。** Claude に「送って」と頼む方法は 1 回ごとに 1 ターン分の消費が発生するので、自動化には使いません。
 
-- **メーター（5時間制限 / 週間・全モデル / 週間・Fable）**: Claude の利用上限に対する %。データ源は `usage-latest.json`（このフォルダ内、`.gitignore` 済み）。
-  - **ターミナルの `claude` を使う場合**: `~/.claude/settings.json` にステータスラインを設定すると、Claude Code が渡してくる `rate_limits` が自動で書き込まれます（Pro/Max のみ。60 秒ごとに更新）。
+- **グラフ（直近 5 時間・直近 7 日）— 無料・設定不要**: セッション記録（`~/.claude/projects/**/*.jsonl`）の `message.usage` をローカルで集計した**新規トークン**（入力＋キャッシュ作成＋出力）を Fable とその他のモデルで積み上げ表示。キャッシュ読取はホバーで確認できます。制限に当たった時刻には赤い点線で「制限」と印が付きます。
+- **メーター（5時間制限 / 週間・全モデル / 週間・Fable）— 無料で取れるのはターミナルの `claude` だけ**: Claude Code がステータスラインに渡す `rate_limits` を `usage-latest.json`（このフォルダ内、`.gitignore` 済み）に書き出して読みます。ステータスラインはローカル実行で API トークンを消費しません（公式ドキュメント明記）。`~/.claude/settings.json`:
 
-    ```json
-    {
-      "statusLine": {
-        "type": "command",
-        "command": "cat > /c/Users/you/Documents/git/claude-board/usage-latest.json",
-        "refreshInterval": 60
-      }
+  ```json
+  {
+    "statusLine": {
+      "type": "command",
+      "command": "cat > /c/Users/you/Documents/git/claude-board/usage-latest.json",
+      "refreshInterval": 60
     }
-    ```
+  }
+  ```
 
-    ※ Claude デスクトップアプリの Code タブはステータスラインを実行しないので、この方法では更新されません。
-  - **デスクトップアプリの場合**: Claude Code のセッションに「10 分ごとに get_usage の結果を http://127.0.0.1:8787/api/usage に POST して」と頼むと、そのセッション内の cron（`CronCreate`）で自動送信されます（セッションを閉じると止まる・7 日で期限切れ。1 回あたりの消費はごく小さいですが、コンテキストの小さいセッションで動かす方が安上がりです）。単発なら「使用量をボードに送って」で十分。手で送るなら:
+  - Pro / Max のみ。ターミナルで `claude` を 1 つ開いておけば 60 秒ごとに更新されます
+  - **Claude デスクトップアプリの Code タブはステータスラインを実行しない**ため、この方法では更新されません。その場合メーターは「—」になり、5時間制限の枠には代わりに「制限に到達（リセット HH:MM）」「直近 24 時間で N 回制限に到達」がセッション記録から無料で出ます
+  - ドキュメント上、ステータスラインに来るのは `five_hour` / `seven_day`（/ `spend_limit`）で、モデル別の週間枠（Fable）は含まれない可能性があります。その場合 Fable の枠には今週の Fable 新規トークン量が出ます
+  - % の履歴は `usage-history.json` に 14 日分保存され、メーター右の小さな折れ線に出ます。1 時間以上更新が無い値は薄く表示し、リセット時刻を過ぎた枠は消えます
+- **手動送信（任意）**: `POST /api/usage` に `{"windows":[{"label":"5-hour limit","percentUsed":38,"resetsAt":"2026-09-21T09:40:00Z"}, …]}` を送れば同じメーターに出ます。アプリの使用量画面を見て自分で打つ分には無料です。
 
-    ```bash
-    curl -X POST -H "content-type: application/json" http://localhost:8787/api/usage -d '{"windows":[{"label":"5-hour limit","percentUsed":38,"resetsAt":"2026-09-21T09:40:00Z"},{"label":"Weekly · all models","percentUsed":50,"resetsAt":"2026-09-26T07:00:00Z"},{"label":"Weekly · Fable","percentUsed":97,"resetsAt":"2026-09-26T07:00:00Z"}]}'
-    ```
-
-  - % の履歴は `usage-history.json` に 14 日分保存され、メーター右の小さな折れ線に出ます。15 分以上古いデータには「（古い）」と表示します。
-- **グラフ（直近 5 時間・直近 7 日）**: セッション記録の `message.usage` から集計した**新規トークン**（入力＋キャッシュ作成＋出力）を Fable とその他のモデルで積み上げ表示。キャッシュ読取はホバーで確認できます。制限に当たった時刻には赤い点線で「制限」と印が付きます。これは完全にローカルのデータなので設定不要です。
 
 ## 画面
 
