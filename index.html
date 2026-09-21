@@ -139,7 +139,10 @@ dialog h3{margin:0 0 12px;font-size:16px}.leg{display:grid;grid-template-columns
 .chart .hit{stroke:var(--danger);stroke-width:1.5;stroke-dasharray:3 3}.chart .hit-t{font-size:9px;fill:var(--danger);font-weight:700}
 .bar-g:hover .s-fable,.bar-g:hover .s-other{opacity:.8}.stale{color:var(--danger)}
 /* 支出台帳 */
-.spend-sum{display:flex;flex-wrap:wrap;gap:8px;padding:0 12px 10px}
+.spend-hero{display:flex;flex-wrap:wrap;gap:10px 28px;align-items:flex-end;padding:2px 14px 12px;border-bottom:1px solid var(--line);margin:0 0 6px}
+.sh-total b{font-size:12px;color:var(--ink-2);font-weight:500;display:block}.sh-total .amt{font-size:34px;font-weight:700;line-height:1.1}
+.sh-break{display:flex;gap:22px;padding-bottom:4px}.sh-break>div{display:flex;flex-direction:column;gap:1px}.sh-break span{font-size:11px;color:var(--ink-3)}.sh-break b{font-size:16px}.sh-break small{font-size:11px;color:var(--ink-3)}
+.spend-more{margin:0 12px 8px}.spend-more summary{cursor:pointer;font-size:12px;font-weight:700;color:var(--ink-2);padding:6px 0;list-style:none}.spend-more summary::before{content:"\25B8  ";color:var(--ink-3)}.spend-more[open] summary::before{content:"\25BE  "}.spend-more .spend-t{margin-left:0;margin-right:0;width:100%}.spend-more .spend-add{padding:4px 0 6px}
 .svc{background:var(--card);border-radius:12px;padding:8px 12px;min-width:150px;flex:1 1 150px}.svc b{display:block;font-size:12px;color:var(--ink-2);font-weight:500}.svc .amt{font-size:20px;font-weight:700;line-height:1.3}.svc .amt small{font-size:12px;color:var(--ink-3);margin-left:3px}.svc .n{font-size:11px;color:var(--ink-3)}
 .svc.total{background:var(--accent-soft)}.svc.unc .amt{color:var(--ink-3)}
 .spend-t{width:100%;border-collapse:collapse;font-size:12px;margin:0 12px 10px;width:calc(100% - 24px)}.spend-t th{text-align:left;font-weight:500;color:var(--ink-3);padding:4px 8px;border-bottom:1px solid var(--line)}.spend-t td{padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
@@ -243,23 +246,35 @@ const money=(a,c)=>a==null?'—':(c==='JPY'?'¥'+Math.round(a).toLocaleString():
 let spendOpen=true;try{spendOpen=localStorage.getItem('ccb:spend')!=='0'}catch(e){}
 function spendSection(){
   const es=[...((state.spend||{}).entries||[])].sort((a,b)=>b.ts-a.ts);
-  // サービス別合計（通貨別）。未確認（金額 null）は件数だけ数える
-  const by=new Map();for(const e of es){const k=e.service;const o=by.get(k)||{service:k,sums:{},n:0,unc:0,last:0};o.n++;if(e.amount==null)o.unc++;else o.sums[e.currency]=(o.sums[e.currency]||0)+e.amount;o.last=Math.max(o.last,e.ts);by.set(k,o)}
-  const tot={};for(const o of by.values())for(const [c,v] of Object.entries(o.sums))tot[c]=(tot[c]||0)+v;
-  const fmtSums=s=>Object.entries(s).map(([c,v])=>money(v,c)).join(' + ')||'—';
-  const cards=[...by.values()].sort((a,b)=>(Object.values(b.sums)[0]||0)-(Object.values(a.sums)[0]||0)).map(o=>`<div class="svc${o.unc&&!Object.keys(o.sums).length?' unc':''}"><b>${esc(o.service)}</b><div class="amt">${fmtSums(o.sums)}${o.unc?`<small>未確認 ${o.unc}</small>`:''}</div><div class="n">${o.n} 件 · ${ago(o.last)}</div></div>`).join('');  const rows=es.map(e=>`<tr><td class="num" style="color:var(--ink-3);white-space:nowrap">${fmt(e.ts)}</td><td><b>${esc(e.service)}</b>${e.status==='unconfirmed'?' <span class="unc">要確認</span>':''}</td><td class="r num">${money(e.amount,e.currency)}</td><td>${esc(e.note)}${e.project?`<div class="p-hint">${esc(e.project)}${e.sessionTitle?' · '+esc(e.sessionTitle.slice(0,40)):''}</div>`:''}</td><td class="r"><button data-sp-del="${e.id}" title="削除">${svg('trash')}</button></td></tr>`).join('');
-  // 従量メーター（各プロジェクトの usage.jsonl をサーバーが集計。console の Usage と同じ式）
   const ms=(state.spend||{}).meters||[];
-  const mtot={};for(const m of ms)mtot[m.currency]=(mtot[m.currency]||0)+m.total.cost;
   const money4=(a,c)=>a==null?'—':(c==='USD'?'$':c+' ')+(a<0.01&&a>0?a.toFixed(4):a.toFixed(2));
+  // サービス別にまとめる: 台帳（購入・契約）の合計 + メーター（従量）の累計
+  const by=new Map();const get=k=>by.get(k)||by.set(k,{service:k,ledger:{},meter:0,meterCur:'USD',n:0,unc:0,last:0}).get(k);
+  for(const e of es){const o=get(e.service);o.n++;if(e.amount==null)o.unc++;else o.ledger[e.currency]=(o.ledger[e.currency]||0)+e.amount;o.last=Math.max(o.last,e.ts)}
+  for(const m of ms){const o=get(m.service);o.meter+=m.total.cost;o.meterCur=m.currency;o.last=Math.max(o.last,m.lastAt||0)}
+  const ledgerTot={},meterTot={},tot={};
+  for(const o of by.values()){for(const [c,v] of Object.entries(o.ledger)){ledgerTot[c]=(ledgerTot[c]||0)+v;tot[c]=(tot[c]||0)+v}if(o.meter){meterTot[o.meterCur]=(meterTot[o.meterCur]||0)+o.meter;tot[o.meterCur]=(tot[o.meterCur]||0)+o.meter}}
+  const fmtSums=s=>Object.entries(s).map(([c,v])=>money4(v,c)).join(' + ')||'$0';
+  const amtOf=o=>Object.values(o.ledger).reduce((a,b)=>a+b,0)+o.meter;
+  const paid=[...by.values()].filter(o=>amtOf(o)>0||o.unc).sort((a,b)=>amtOf(b)-amtOf(a)),free=[...by.values()].filter(o=>amtOf(o)===0&&!o.unc);
+  const hasLedger=o=>Object.values(o.ledger).some(v=>v>0);
+  const kind=o=>[hasLedger(o)?'購入・契約':'',o.meter?'従量':''].filter(Boolean).join('＋')||(o.unc?'要確認':'—');
+  const rows=paid.map(o=>`<tr><td><b>${esc(o.service)}</b></td><td class="r num"><b>${o.unc&&amtOf(o)===0?'—':money4(amtOf(o),o.meterCur)}</b>${o.unc?` <span class="unc">要確認 ${o.unc}</span>`:''}</td><td style="color:var(--ink-2)">${kind(o)}${o.meter&&hasLedger(o)?`<div class="p-hint">購入 ${fmtSums(o.ledger)} ＋ 従量 ${money4(o.meter,o.meterCur)}</div>`:''}</td><td class="num" style="color:var(--ink-3);white-space:nowrap">${ago(o.last)}</td></tr>`).join('');
   const meterRows=ms.map(m=>{const d30=m.days,max=Math.max(1e-9,...d30.map(d=>d.cost));const strip=d30.length?`<span class="mstrip" title="直近 ${d30.length} 日">${d30.map(d=>`<i style="height:${Math.max(2,Math.round(d.cost/max*18))}px" title="${d.day}: ${money4(d.cost,m.currency)} · ${d.requests} req · ${fmtTok(d.input)} tok"></i>`).join('')}</span>`:'';
     return`<tr><td><b>${esc(m.service)}</b><div class="p-hint">${m.exists?`${esc(m.file.split(/[\\/]/).slice(-2).join('/'))} · ${m.lastAt?ago(m.lastAt)+'に更新':''}`:'<span class="stale">ファイルが見つかりません</span>'} · 入力 $${m.pricePerMInput}/M${m.pricePerMOutput?` · 出力 $${m.pricePerMOutput}/M`:' · 出力無料'}</div></td>
       <td class="r num">${money4(m.today.cost,m.currency)}<div class="p-hint">${m.today.requests} req · ${fmtTok(m.today.input)}</div></td><td class="r num">${money4(m.month.cost,m.currency)}<div class="p-hint">${m.month.requests} req · ${fmtTok(m.month.input)}</div></td><td class="r num"><b>${money4(m.total.cost,m.currency)}</b><div class="p-hint">${m.total.requests} req · ${fmtTok(m.total.input)}</div></td><td>${strip}</td></tr>`}).join('');
-  const meterHtml=ms.length?`<div class="c-t" style="padding:4px 12px 2px">従量課金（実測・見積）<span class="dim" style="font-weight:400"> — 各プロジェクトが記録した API 応答の usage から集計。トークン消費なし</span></div><table class="spend-t"><thead><tr><th>サービス</th><th style="text-align:right">今日</th><th style="text-align:right">今月</th><th style="text-align:right">累計</th><th>日別</th></tr></thead><tbody>${meterRows}</tbody></table>`:'';
-  const body=!spendOpen?'':`<div class="spend-sum"><div class="svc total"><b>購入・契約（台帳）</b><div class="amt">${fmtSums(tot)}</div><div class="n">${es.length} 件 · ${by.size} サービス</div></div>${ms.length?`<div class="svc total"><b>従量（実測・見積）</b><div class="amt">${fmtSums(mtot)}</div><div class="n">${ms.length} メーター · 今日 ${fmtSums(Object.fromEntries(ms.map(m=>[m.currency,ms.filter(x=>x.currency===m.currency).reduce((s,x)=>s+x.today.cost,0)])))}</div></div>`:''}${cards}</div>${meterHtml}
-    ${es.length?`<table class="spend-t"><thead><tr><th>日時</th><th>サービス</th><th style="text-align:right">金額</th><th>メモ</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:'<p class="p-hint" style="padding:0 12px 10px">記録はまだありません。</p>'}
-    <form class="spend-add" id="spendAdd"><input class="svc-in" name="service" placeholder="サービス名" required list="svcList"><datalist id="svcList">${[...by.keys()].map(k=>`<option value="${esc(k)}">`).join('')}</datalist><input class="amt-in num" name="amount" type="number" step="0.01" min="0" placeholder="金額（空=未確認）"><select name="currency"><option>USD</option><option>JPY</option></select><input class="note-in" name="note" placeholder="メモ（何に・なぜ）"><button class="btn" type="submit">記録</button></form>`;
-  return`<section class="lane spend" style="--lc:var(--l-done)"><div class="lane-h"><h2>サービスと支出</h2><small>Claude 経由で使った外部サービスと課金の記録（board-spend.json）</small><button class="tb sm" data-spend-toggle>${spendOpen?'折りたたむ':'展開'}</button></div>${body}</section>`;
+  const entryRows=es.map(e=>`<tr><td class="num" style="color:var(--ink-3);white-space:nowrap">${fmt(e.ts)}</td><td><b>${esc(e.service)}</b>${e.status==='unconfirmed'?' <span class="unc">要確認</span>':''}</td><td class="r num">${money(e.amount,e.currency)}</td><td>${esc(e.note)}${e.project?`<div class="p-hint">${esc(e.project)}${e.sessionTitle?' · '+esc(e.sessionTitle.slice(0,40)):''}</div>`:''}</td><td class="r"><button data-sp-del="${e.id}" title="削除">${svg('trash')}</button></td></tr>`).join('');
+  const body=!spendOpen?'':`
+    <div class="spend-hero"><div class="sh-total"><b>合計</b><div class="amt num">${fmtSums(tot)}</div></div><div class="sh-break"><div><span>購入・契約</span><b class="num">${fmtSums(ledgerTot)}</b><small>台帳 ${es.length} 件</small></div><div><span>従量（実測・見積）</span><b class="num">${fmtSums(meterTot)}</b><small>${ms.length} メーター · 今日 ${money4(ms.reduce((s,m)=>s+m.today.cost,0),'USD')}</small></div></div></div>
+    <div class="c-t" style="padding:6px 12px 2px">内訳（サービス別）</div>
+    <table class="spend-t"><thead><tr><th>サービス</th><th style="text-align:right">金額</th><th>種別</th><th>最終更新</th></tr></thead><tbody>${rows||'<tr><td colspan="4" class="p-hint">課金のあるサービスはありません</td></tr>'}</tbody></table>
+    ${free.length?`<div class="p-hint" style="padding:0 12px 10px">無料で利用中（$0）: ${free.map(o=>esc(o.service)).join('、')}</div>`:''}
+    ${ms.length?`<details class="spend-more"><summary>従量課金の推移（今日／今月／累計）</summary><table class="spend-t"><thead><tr><th>サービス</th><th style="text-align:right">今日</th><th style="text-align:right">今月</th><th style="text-align:right">累計</th><th>日別</th></tr></thead><tbody>${meterRows}</tbody></table></details>`:''}
+    <details class="spend-more"><summary>台帳の明細（${es.length} 件）と追加</summary>
+      ${es.length?`<table class="spend-t"><thead><tr><th>日時</th><th>サービス</th><th style="text-align:right">金額</th><th>メモ</th><th></th></tr></thead><tbody>${entryRows}</tbody></table>`:'<p class="p-hint" style="padding:0 12px 10px">記録はまだありません。</p>'}
+      <form class="spend-add" id="spendAdd"><input class="svc-in" name="service" placeholder="サービス名" required list="svcList"><datalist id="svcList">${[...by.keys()].map(k=>`<option value="${esc(k)}">`).join('')}</datalist><input class="amt-in num" name="amount" type="number" step="0.01" min="0" placeholder="金額（空=未確認）"><select name="currency"><option>USD</option><option>JPY</option></select><input class="note-in" name="note" placeholder="メモ（何に・なぜ）"><button class="btn" type="submit">記録</button></form>
+    </details>`;
+  return`<section class="lane spend" style="--lc:var(--l-done)"><div class="lane-h"><h2>サービスと支出</h2><small>Claude 経由で使った外部サービスと課金</small><button class="tb sm" data-spend-toggle>${spendOpen?'折りたたむ':'展開'}</button></div>${body}</section>`;
 }
 async function postSpend(j){const r=await fetch('/api/spend',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(j)});const d=await r.json();if(d.error)toast('エラー: '+d.error);else{await refresh();}return d}
 function barChart(title,buckets,tipLabel,hits){
