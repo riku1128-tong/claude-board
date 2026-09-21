@@ -150,6 +150,10 @@ dialog h3{margin:0 0 12px;font-size:16px}.leg{display:grid;grid-template-columns
 .mstrip{display:inline-flex;align-items:flex-end;gap:2px;height:20px}.mstrip i{display:inline-block;width:6px;border-radius:2px 2px 0 0;background:var(--c-fable);opacity:.85}
 .spend-add{display:flex;flex-wrap:wrap;gap:6px;padding:0 12px 4px;align-items:center}.spend-add input,.spend-add select{background:var(--glass-strong);border:1px solid var(--line);border-radius:8px;padding:6px 8px;font-size:12px;outline:none;min-width:0}.spend-add input:focus{border-color:var(--accent)}
 .spend-add .svc-in{flex:1 1 140px}.spend-add .amt-in{width:90px}.spend-add .note-in{flex:2 1 200px}
+/* セッションの会話ログ */
+.chat{display:flex;flex-direction:column;gap:8px}.msg{border-radius:12px;padding:8px 10px;background:var(--card);font-size:12.5px;max-width:100%}.msg.user{background:var(--accent-soft);margin-left:14px}.msg.assistant{margin-right:14px}
+.msg-h{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--ink-3);font-weight:700;margin-bottom:3px}.msg-h svg{width:14px;height:14px}.msg-h time{font-weight:400;margin-left:auto}
+.msg-b{white-space:pre-wrap;word-break:break-word;line-height:1.5;max-height:220px;overflow:auto}.msg-t{font-size:11px;color:var(--ink-3);margin-top:4px}
 .tip{position:fixed;z-index:50;pointer-events:none;background:var(--glass-strong);border:1px solid var(--glass-border);box-shadow:var(--shadow);border-radius:10px;padding:6px 10px;font-size:12px;color:var(--ink);display:none;max-width:300px;line-height:1.5}
 @media (max-width:900px){.charts{grid-template-columns:1fr}}
 </style>
@@ -376,6 +380,17 @@ function panelTarget(){
   const s=selSess&&state.sessions.find(x=>x.id===selSess);if(s)return{kind:'sess',s,key:'sess:'+s.id};
   return null;
 }
+// セッションの直近の発話（/api/session/<id>/messages）。10 秒はキャッシュし、取得中は前回の内容を出す
+const chatCache=new Map();
+function chatLog(s){
+  const c=chatCache.get(s.id);
+  if(!c||(Date.now()-c.at>10e3&&!c.loading)){const prev=c;chatCache.set(s.id,{at:prev?.at||0,data:prev?.data,loading:true});
+    fetch(`/api/session/${s.id}/messages?n=20`,{cache:'no-store'}).then(r=>r.json()).then(d=>{chatCache.set(s.id,{at:Date.now(),data:d,loading:false});if(panelTarget()?.s?.id===s.id&&tab==='desc'&&document.activeElement?.id!=='noteIn')renderPanel()}).catch(()=>chatCache.set(s.id,{at:Date.now(),data:prev?.data,loading:false}))}
+  const d=chatCache.get(s.id)?.data;
+  if(!d)return`<p style="color:var(--ink-3);margin:0">読み込み中…</p>`;
+  if(!d.messages.length)return`<p style="color:var(--ink-3);margin:0">発話はまだありません。</p>`;
+  return`<div class="chat">${d.total>d.messages.length?`<div class="p-hint" style="text-align:center">…（先に ${d.total-d.messages.length} 件）</div>`:''}${d.messages.map(m=>`<div class="msg ${m.role}"><div class="msg-h">${svg(m.role==='user'?'person':'bot')}${m.role==='user'?'あなた':'Claude'}${m.ts?`<time>${hm(m.ts)}</time>`:''}${m.limit?`<span class="unc">制限</span>`:''}</div>${m.text?`<div class="msg-b">${esc(m.text)}${m.truncated?'…':''}</div>`:''}${m.imgs?`<div class="p-hint">📎 画像 ${m.imgs} 枚</div>`:''}${m.tools?`<div class="msg-t">🔧 ${esc(m.tools)}${m.results?` → 結果 ${m.results}`:''}</div>`:''}</div>`).join('')}</div>`;
+}
 function notesPane(ns){
   return`<div class="compose"><textarea id="noteIn" maxlength="300" placeholder="メモを入力…（最大300文字）"></textarea><button class="btn" id="noteAdd">貼る</button><div class="count"><span id="noteCnt">0</span> / 300</div></div>
       <div class="notes">${ns.length?ns.map((n,i)=>`<div><div class="note-h">${svg('person')}あなた<time>${ago(n.ts)}</time><span class="acts"><button data-nd="${i}" title="削除">${svg('trash')}</button></span></div><div class="note-b">${esc(n.text)}</div></div>`).join(''):`<p style="color:var(--ink-3);margin:0">付箋はまだありません。</p>`}</div>`;
@@ -416,7 +431,7 @@ function renderPanel(){
       <span class="k">${svg('clock')}最終更新</span><span class="v num" style="color:var(--ink-2)">${fmt(s.lastAt)}（${ago(s.lastAt)}）</span>`;
     panes={
       notes:notesPane(ns),
-      desc:s.lastText?`<pre class="desc">${esc(s.lastText)}</pre>`:`<p style="color:var(--ink-3);margin:0">直近の発話はまだありません。</p>`,
+      desc:chatLog(s),
       raw:`<pre class="json">${esc(JSON.stringify(s,null,2))}</pre>`
     };
     tabs=[['notes',`付箋 <span class="num">${ns.length}</span>`],['desc','直近の発話'],['raw','データ']];

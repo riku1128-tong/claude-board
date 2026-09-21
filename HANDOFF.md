@@ -109,7 +109,7 @@ claude-board/
 
 1. ~~**Windows 実機確認**~~ 済み（上記）。残: `todos/` `tasks/` があるマシンでのタスク表示確認
 2. **サブエージェントの表示**: `agentLabel()` を実データ（`subagents/agent-*.jsonl`）で検証。パスや行形式が違えば修正
-3. **セッション履歴タブ**: 詳細パネルにセッションの直近メッセージ（`lastText`）や TodoWrite 履歴を表示
+3. ~~**セッション履歴タブ**~~ 済み（2026-09-22）: `GET /api/session/<id>/messages?n=20` が transcript 末尾 4MB から user/assistant を抽出。同じ `message.id` の行を結合、tool_result だけの user 行は前の assistant に `results` として畳み、本文なしのツール呼び出しだけの assistant ターンは次のターンに結合（`tmap` → `tools: "Bash ×3, Read"`）。制御タグ除去は `cleanPrompt()`。画面は `chatLog()` が 10 秒キャッシュで遅延取得。残: TodoWrite 履歴の表示
 4. **ウォッチャー化**: `fs.watch` で `tasks/` `sessions/` を監視し、SSE で即時プッシュ（現状は 5秒 tick）
 5. **元イメージにあった機能**: 「エージェントに依頼」ボタン（Claude Code へ指示を送る手段があれば接続）、ファイル／HTML タブ
 6. **パッケージ化**: `npx` で起動できるように `package.json` に `bin` を追加、`--open` でブラウザ自動起動

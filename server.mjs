@@ -323,9 +323,48 @@ async function readMeters() {
 
 // ---------- state ----------
 let cache = { at: 0, data: null };
+let lastSessions = new Map(); // sessionId -> session（file を含む）。/api/session/<id>/messages が使う
+// ---------- session messages: transcript 末尾から直近の発話を取り出す ----------
+// assistant 行は content ブロックごとに分かれて同じ message.id を持つのでまとめる。tool_use はテキストにせず「ツール名 ×n」の要約にする
+function toolMap(blocks, into = {}) { for (const b of blocks) if (b.type === 'tool_use') into[b.name] = (into[b.name] || 0) + 1; return into; }
+const fmtTools = m => Object.entries(m).map(([k, v]) => v > 1 ? `${k} ×${v}` : k).join(', ');
+async function sessionMessages(id, n) {
+  const s = lastSessions.get(id); if (!s) return null;
+  const st = await stat(s.file); if (!st) return null;
+  const raw = lines(await readTail(s.file, Math.min(st.size, 4 * 1024 * 1024)));
+  const out = [];
+  for (const l of raw) {
+    if ((l.type !== 'user' && l.type !== 'assistant') || l.isMeta || l.isSidechain || !l.message) continue;
+    const c = l.message.content, ts = Date.parse(l.timestamp || '') || null;
+    if (l.type === 'assistant') {
+      if (l.message.model === '<synthetic>' && !l.quotaLimits) continue;
+      const blocks = Array.isArray(c) ? c : [];
+      const text = textOf(c).trim(), tmap = toolMap(blocks);
+      const prev = out[out.length - 1];
+      if (prev && prev.role === 'assistant' && prev.mid && prev.mid === l.message.id) { if (text) prev.text = (prev.text ? prev.text + '\n' : '') + text; toolMap(blocks, prev.tmap); continue; }
+      if (!text && !Object.keys(tmap).length && !l.quotaLimits) continue;
+      out.push({ role: 'assistant', ts, mid: l.message.id, text, tmap, model: l.message.model || '', limit: l.quotaLimits?.status === 'rejected' ? (l.quotaLimits.rateLimitType || 'limit') : '' });
+    } else {
+      // tool_result だけの user 行は「ツール結果」として畳む（本文は出さない）
+      if (Array.isArray(c) && c.every(b => b.type === 'tool_result')) { const prev = out[out.length - 1]; if (prev && prev.role === 'assistant') prev.results = (prev.results || 0) + c.length; continue; }
+      const text = cleanPrompt(textOf(c)); if (!text) continue;
+      const imgs = Array.isArray(c) ? c.filter(b => b.type === 'image').length : 0;
+      out.push({ role: 'user', ts, text, imgs });
+    }
+  }
+  // 連続する assistant のうち、前がツール呼び出しだけ（本文なし）なら 1 つの「ターン」にまとめる（Bash ×3 → 結果 3 → 本文、のように読める）
+  const turns = [];
+  for (const m of out) {
+    const prev = turns[turns.length - 1];
+    if (prev && prev.role === 'assistant' && m.role === 'assistant' && !prev.text) { for (const [k, v] of Object.entries(m.tmap || {})) prev.tmap[k] = (prev.tmap[k] || 0) + v; prev.results = (prev.results || 0) + (m.results || 0); prev.text = m.text; prev.ts = m.ts; prev.limit = prev.limit || m.limit; continue; }
+    turns.push({ ...m, tmap: { ...(m.tmap || {}) } });
+  }
+  return { id, title: s.title, project: s.project, total: turns.length, messages: turns.slice(-n).map(({ mid, tmap, ...m }) => ({ ...m, tools: fmtTools(tmap || {}), text: m.text.slice(0, 1500), truncated: m.text.length > 1500 })) };
+}
 async function buildState() {
   if (Date.now() - cache.at < 2000 && cache.data) return cache.data;
   const sessions = await scanSessions();
+  lastSessions = sessions;
   const all = (await scanTasks(sessions)).filter(t => t.status !== 'deleted');
   const byId = new Map(all.map(t => [t.id, t]));
   // 古い完了タスクは省く（updatedAt はファイル更新時刻 ≒ 完了時刻）
@@ -360,6 +399,13 @@ async function handle(req, res) {
       if (!j || typeof j !== 'object') { res.writeHead(400); return res.end('bad json'); }
       await fsp.writeFile(NOTES_FILE, JSON.stringify(j, null, 2)); cache.at = 0;
       res.writeHead(200, { 'content-type': 'application/json' }); return res.end('{"ok":true}');
+    }
+    const mm = url.pathname.match(/^\/api\/session\/([0-9a-f-]{8,64})\/messages$/i);
+    if (mm) { // セッションの直近の発話（既定 20 件、最大 100）
+      if (!lastSessions.size) await buildState();
+      const r = await sessionMessages(mm[1], Math.min(100, Math.max(1, Number(url.searchParams.get('n')) || 20)));
+      if (!r) { res.writeHead(404, { 'content-type': 'application/json; charset=utf-8' }); return res.end('{"error":"session not found"}'); }
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }); return res.end(JSON.stringify(r));
     }
     if (url.pathname === '/api/spend') { // 支出台帳。GET で一覧、POST で追加 / {update:id,…} / {delete:id}
       if (req.method === 'GET') { res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }); return res.end(JSON.stringify(await readSpend())); }
