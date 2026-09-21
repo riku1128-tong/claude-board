@@ -14,6 +14,7 @@
   --accent:#3f6fe8;--accent-ink:#fff;--accent-soft:rgba(63,111,232,.14);--focus:rgba(63,111,232,.45);
   --l-active:#3f6fe8;--l-you:#d99a2b;--l-agent:#8b5cf6;--l-hold:#8a93a8;--l-done:#2fa876;--l-block:#d9384b;
   --tile-blue:#e6eefb;--tile-blue-i:#3f6fe8;--tile-amber:#fbefdd;--tile-amber-i:#c4832a;--tile-purple:#efe8fc;--tile-purple-i:#8b5cf6;
+  --c-fable:#3f6fe8;--c-other:#d99a2b;
   --tile-red:#fde4e6;--tile-red-i:#d9384b;--tile-green:#e2f5ec;--tile-green-i:#2fa876;--tile-gray:#eceef3;--tile-gray-i:#6d7590;
   --danger:#d9384b;--shadow:0 10px 30px rgba(40,50,80,.10);--radius:18px;
 }
@@ -22,6 +23,7 @@
   --card:rgba(36,43,64,.92);--card-hover:#2b3350;--ink:#e8ecf6;--ink-2:#b4bbd0;--ink-3:#7b849e;--line:rgba(255,255,255,.09);
   --accent:#6f95ff;--accent-ink:#0f1626;--accent-soft:rgba(111,149,255,.18);
   --tile-blue:#243256;--tile-blue-i:#8eaaff;--tile-amber:#3f3220;--tile-amber-i:#f0b35a;--tile-purple:#33284f;--tile-purple-i:#b79cff;
+  --c-fable:#6a8ff2;--c-other:#bd8a2c;
   --tile-red:#4a2430;--tile-red-i:#ff7d8c;--tile-green:#1f3d31;--tile-green-i:#5fd3a0;--tile-gray:#2b3146;--tile-gray-i:#a3abc4;--shadow:0 10px 30px rgba(0,0,0,.35);
 }}
 :root[data-theme="dark"]{
@@ -29,6 +31,7 @@
   --card:rgba(36,43,64,.92);--card-hover:#2b3350;--ink:#e8ecf6;--ink-2:#b4bbd0;--ink-3:#7b849e;--line:rgba(255,255,255,.09);
   --accent:#6f95ff;--accent-ink:#0f1626;--accent-soft:rgba(111,149,255,.18);
   --tile-blue:#243256;--tile-blue-i:#8eaaff;--tile-amber:#3f3220;--tile-amber-i:#f0b35a;--tile-purple:#33284f;--tile-purple-i:#b79cff;
+  --c-fable:#6a8ff2;--c-other:#bd8a2c;
   --tile-red:#4a2430;--tile-red-i:#ff7d8c;--tile-green:#1f3d31;--tile-green-i:#5fd3a0;--tile-gray:#2b3146;--tile-gray-i:#a3abc4;--shadow:0 10px 30px rgba(0,0,0,.35);
 }
 *{box-sizing:border-box}html,body{height:100%}
@@ -125,6 +128,24 @@ dialog{border:0;border-radius:16px;padding:20px 22px;background:var(--glass-stro
 dialog h3{margin:0 0 12px;font-size:16px}.leg{display:grid;grid-template-columns:auto 1fr;gap:8px 12px;align-items:center;font-size:13px}.leg i{width:6px;height:18px;border-radius:3px;display:block}.leg svg{width:18px;height:18px;color:var(--accent)}
 @media (max-width:900px){.app{padding:10px 12px 12px}.main{grid-template-columns:1fr}.panel{position:fixed;inset:10px;z-index:20;transform:translateY(105%);transition:transform .25s}.panel.open{transform:none}.conn{margin-left:0}.brand span{display:none}.cards{grid-template-columns:1fr}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+/* 使用量セクション: メーター（同一ランプの薄い色をトラックに）＋積み上げ棒グラフ */
+.usage .lane-h small{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.tb.sm{padding:4px 10px;font-size:12px}
+.meters{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;padding:0 12px 10px}
+.meter{background:var(--card);border-radius:14px;padding:12px 14px;--fill:var(--accent);--track:var(--accent-soft)}
+.meter.sev-warn{--fill:var(--tile-amber-i);--track:var(--tile-amber)}.meter.sev-danger{--fill:var(--tile-red-i);--track:var(--tile-red)}.meter.sev-none{--fill:var(--ink-3);--track:var(--tile-gray)}
+.m-l{font-size:12px;color:var(--ink-2);font-weight:500}.m-v{font-size:28px;font-weight:700;line-height:1.2;margin:2px 0 8px;display:flex;align-items:flex-end;gap:10px}.m-v small{font-size:14px;color:var(--ink-2);margin-left:2px}.m-v .dim{color:var(--ink-3)}
+.m-v .spark{width:96px;height:24px;color:var(--fill);margin-left:auto;opacity:.8;flex:none}
+.meter .bar{height:8px;border-radius:4px;background:var(--track);overflow:hidden}.meter .bar i{display:block;height:100%;border-radius:4px;background:var(--fill);transition:width .4s}
+.m-f{font-size:11px;color:var(--ink-3);margin-top:8px;min-height:14px}
+.legend{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:0 14px 8px;font-size:12px;color:var(--ink-2)}.legend .sw{width:10px;height:10px;border-radius:3px;display:inline-block}.legend .dim{color:var(--ink-3);font-size:11px}
+.charts{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:0 12px 12px}
+.chart{background:var(--card);border-radius:14px;padding:10px 12px 6px;min-width:0}.c-t{font-size:12px;font-weight:700;color:var(--ink-2);margin-bottom:4px}
+.chart svg{width:100%;height:auto;display:block}.chart .grid{stroke:var(--line)}.chart .base{stroke:var(--ink-3);opacity:.5}.chart .ax{font-size:10px;fill:var(--ink-3)}.chart .dl{font-size:10px;fill:var(--ink-2);font-weight:700}
+.s-fable{fill:var(--c-fable);background:var(--c-fable)}.s-other{fill:var(--c-other);background:var(--c-other)}
+.chart .hit{stroke:var(--danger);stroke-width:1.5;stroke-dasharray:3 3}.chart .hit-t{font-size:9px;fill:var(--danger);font-weight:700}
+.bar-g:hover .s-fable,.bar-g:hover .s-other{opacity:.8}.stale{color:var(--danger)}
+.tip{position:fixed;z-index:50;pointer-events:none;background:var(--glass-strong);border:1px solid var(--glass-border);box-shadow:var(--shadow);border-radius:10px;padding:6px 10px;font-size:12px;color:var(--ink);display:none;max-width:300px;line-height:1.5}
+@media (max-width:900px){.meters,.charts{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -169,6 +190,7 @@ dialog h3{margin:0 0 12px;font-size:16px}.leg{display:grid;grid-template-columns
   </div>
 </div>
 <div class="toast" id="toast" role="status"></div>
+<div class="tip" id="tip" role="tooltip"></div>
 <dialog id="legend">
   <h3>凡例</h3>
   <div class="leg" id="legBody"></div>
@@ -198,6 +220,50 @@ const bms=()=>state.notes.bookmarks||(state.notes.bookmarks=[]);
 async function saveNotes(){await fetch('/api/notes',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(state.notes)})}
 
 function laneOf(t){return t.status==='completed'?'completed':t.status==='in_progress'?'in_progress':t.blocked?'blocked':'pending'}
+
+// ---- 使用量セクション（レート制限メーター＋トークン消費グラフ） ----
+const fmtTok=n=>n>=1e6?(n/1e6).toFixed(n>=1e7?0:1)+'M':n>=1e3?(n/1e3).toFixed(n>=1e4?0:1)+'K':String(Math.round(n));
+const hm=ts=>{const d=new Date(ts),p=n=>String(n).padStart(2,'0');return`${p(d.getHours())}:${p(d.getMinutes())}`};
+const md=ts=>{const d=new Date(ts);return`${d.getMonth()+1}/${d.getDate()}`};
+function untilTxt(ts){const m=Math.max(0,Math.round((ts-Date.now())/60000));if(m<60)return`あと ${m} 分`;if(m<1440)return`あと ${Math.floor(m/60)} 時間${m%60?` ${m%60} 分`:''}`;return`あと ${Math.floor(m/1440)} 日 ${Math.floor(m%1440/60)} 時間`}
+let usageOpen=true;try{usageOpen=localStorage.getItem('ccb:usage')!=='0'}catch(e){}
+function meterTile(key,fallbackLabel,u,hist,fallbackFoot){
+  const w=u?.windows.find(x=>x.key===key)||(key==='seven_day_fable'?u?.windows.find(x=>/^seven_day_./.test(x.key)):null);
+  const pct=w?Math.max(0,Math.min(100,w.pct)):null;
+  const sev=pct==null?'none':pct>=90?'danger':pct>=70?'warn':'ok';
+  const pts=w?hist.filter(h=>h.w[w.key]!=null).slice(-24):[];
+  const spark=pts.length>=2?`<svg class="spark" viewBox="0 0 96 24" aria-hidden="true"><polyline fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" points="${pts.map((h,i)=>`${(i/(pts.length-1)*94+1).toFixed(1)},${(23-h.w[w.key]/100*22).toFixed(1)}`).join(' ')}"/></svg>`:'';
+  const foot=w?(w.resetsAt?`リセット ${fmt(w.resetsAt)}（${untilTxt(w.resetsAt)}）`:''):(fallbackFoot||'データなし');
+  return`<div class="meter sev-${sev}"><div class="m-l">${esc(w?.label||fallbackLabel)}</div><div class="m-v">${pct==null?'<span class="dim">—</span>':`<span>${Math.round(pct)}<small>%</small></span>`}${spark}</div><div class="bar"><i style="width:${pct??0}%"></i></div><div class="m-f">${foot}</div></div>`;
+}
+function barChart(title,buckets,tipLabel,hits){
+  const W=600,H=150,P={l:44,r:8,t:18,b:22},iw=W-P.l-P.r,ih=H-P.t-P.b;
+  const max=Math.max(1,...buckets.map(b=>b.fable+b.other));
+  const p10=Math.pow(10,Math.floor(Math.log10(max))),m=max/p10,top=(m<=1?1:m<=2?2:m<=5?5:10)*p10;
+  const y=v=>P.t+ih-v/top*ih,bw=iw/buckets.length,gap=Math.min(6,bw*.25),w=bw-gap;
+  const grid=[.5,1].map(f=>`<line x1="${P.l}" x2="${W-P.r}" y1="${y(top*f)}" y2="${y(top*f)}" class="grid"/><text x="${P.l-6}" y="${y(top*f)+4}" class="ax" text-anchor="end">${fmtTok(top*f)}</text>`).join('');
+  const maxI=buckets.reduce((mi,b,i)=>b.fable+b.other>buckets[mi].fable+buckets[mi].other?i:mi,0);
+  const bars=buckets.map((b,i)=>{const x=P.l+i*bw+gap/2,tot=b.fable+b.other,yf=y(b.fable),yo=y(tot);const segs=[];
+    if(b.fable>0)segs.push(`<rect x="${x}" y="${yf}" width="${w}" height="${Math.max(1,y(0)-yf)}" rx="${b.other>0?0:3}" class="s-fable"/>`);
+    if(b.other>0)segs.push(`<rect x="${x}" y="${yo}" width="${w}" height="${Math.max(1,yf-yo-(b.fable>0?2:0))}" rx="3" class="s-other"/>`);
+    const lab=i===maxI&&tot>0?`<text x="${x+w/2}" y="${yo-4}" class="dl" text-anchor="middle">${fmtTok(tot)}</text>`:'';
+    const tip=`${tipLabel(b)}\nFable ${fmtTok(b.fable)} ・ その他 ${fmtTok(b.other)}（新規）\nキャッシュ読取 ${fmtTok(b.cached)}`;
+    return`<g class="bar-g" data-tip="${esc(tip)}"><rect x="${P.l+i*bw}" y="${P.t}" width="${bw}" height="${ih}" fill="transparent"/>${segs.join('')}${lab}</g>`}).join('');
+  const xl=buckets.map((b,i)=>b.lab?`<text x="${P.l+i*bw+bw/2}" y="${H-6}" class="ax" text-anchor="middle">${esc(b.lab)}</text>`:'').join('');
+  const hitIdx=new Set(hits.map(h=>{for(let j=buckets.length-1;j>=0;j--)if(h.t>=buckets[j].t)return j;return -1}).filter(i=>i>=0&&hits.some(h=>h.t>=buckets[0].t)));
+  const hm2=[...hitIdx].map(i=>{const x=P.l+i*bw+bw/2;return`<line x1="${x}" x2="${x}" y1="${P.t}" y2="${y(0)}" class="hit"/><text x="${x}" y="${P.t-6}" class="hit-t" text-anchor="middle">制限</text>`}).join('');
+  return`<div class="chart"><div class="c-t">${title}</div><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${title}">${grid}<line x1="${P.l}" x2="${W-P.r}" y1="${y(0)}" y2="${y(0)}" class="base"/>${bars}${hm2}${xl}</svg></div>`;
+}
+function usageSection(){
+  const U=state.usage||{},u=U.windows?U:null,hist=U.history||[],tk=U.tokens||{h5:[],d7:[],hits:[]};
+  const h5=tk.h5.map((b,i)=>({...b,lab:i%4===0?hm(b.t):''})),d7=tk.d7.map(b=>({...b,lab:md(b.t)}));
+  const wf=d7.reduce((s,b)=>s+b.fable,0),wo=d7.reduce((s,b)=>s+b.other,0);
+  const meta=u?`${u.plan?esc(u.plan)+' · ':''}${u.source==='statusline'?'ステータスライン':'手動送信'} · ${ago(u.at)}に取得${Date.now()-u.at>15*60e3?' <b class="stale">（古い）</b>':''}`:'制限の % は未取得（README「使用量」参照）';
+  const body=!usageOpen?'':`<div class="meters">${meterTile('five_hour','5時間制限',u,hist)}${meterTile('seven_day','週間・全モデル',u,hist)}${meterTile('seven_day_fable','週間・Fable',u,hist,`今週の Fable 新規トークン ${fmtTok(wf)}`)}</div>
+    <div class="legend"><i class="sw s-fable"></i>Fable <i class="sw s-other"></i>その他のモデル <span class="dim">棒＝新規トークン（入力＋キャッシュ作成＋出力）。キャッシュ読取は含めず、ホバーで表示。今週: Fable ${fmtTok(wf)} / その他 ${fmtTok(wo)}</span></div>
+    <div class="charts">${barChart('直近 5 時間（15 分ごと）',h5,b=>`${hm(b.t)}–${hm(b.t+15*60e3)}`,tk.hits)}${barChart(`直近 ${d7.length} 日（日ごと）`,d7,b=>md(b.t),tk.hits)}</div>`;
+  return`<section class="lane usage" style="--lc:var(--l-active)"><div class="lane-h"><h2>使用量</h2><small>${meta}</small><button class="tb sm" data-usage-toggle>${usageOpen?'折りたたむ':'展開'}</button></div>${body}</section>`;
+}
 function tileFor(t){const l=laneOf(t);const c={in_progress:['blue','spin'],blocked:['red','lock'],pending:['amber','doc'],completed:['green','check']}[l];return{style:`--t-bg:var(--tile-${c[0]});--t-i:var(--tile-${c[0]}-i)`,icon:c[1]}}
 function filtered(){
   const q=$('#q').value.trim().toLowerCase();
@@ -235,7 +301,7 @@ function renderBoard(){
           <span class="idx num">${i+1}</span>
           <button class="star${bms().includes(t.id)?' on':''}" data-bm="${t.id}" title="ブックマーク">${svg('star')}</button>
         </div>`}).join(''):'該当なし'}</div></section>`}).join('');
-  b.innerHTML=sessHtml+lanesHtml;b.scrollTop=top;
+  b.innerHTML=usageSection()+sessHtml+lanesHtml;b.scrollTop=top;
   const sl=$('#fSess');const cur=sl.value;sl.innerHTML=`<option value="">セッション: すべて</option>`+state.sessions.map(s=>`<option value="${s.id}"${s.id===selSess?' selected':''}>${esc(s.project)} · ${esc(s.title.slice(0,30))}</option>`).join('');
 }
 // 左パネルの対象: 選択中のタスク > 選択中のセッション。付箋はタスクは task.id、セッションは "sess:<id>" をキーに保存
@@ -299,7 +365,11 @@ function renderPanel(){
 function render(){renderBoard();renderPanel()}
 function select(id){sel=id;try{localStorage.setItem('ccb:sel',id||'')}catch(e){}render()}
 
+const tip=$('#tip');
+$('#board').addEventListener('mousemove',e=>{const g=e.target.closest('[data-tip]');if(!g){tip.style.display='none';return}tip.textContent=g.dataset.tip;tip.style.display='block';tip.style.left=Math.min(e.clientX+14,innerWidth-tip.offsetWidth-8)+'px';tip.style.top=Math.min(e.clientY+14,innerHeight-tip.offsetHeight-8)+'px'});
+$('#board').addEventListener('mouseleave',()=>tip.style.display='none');
 $('#board').addEventListener('click',async e=>{
+  const ut=e.target.closest('[data-usage-toggle]');if(ut){usageOpen=!usageOpen;try{localStorage.setItem('ccb:usage',usageOpen?'1':'0')}catch(e){}renderBoard();return}
   const bm=e.target.closest('[data-bm]');if(bm){const a=bms(),i=a.indexOf(bm.dataset.bm);i>=0?a.splice(i,1):a.push(bm.dataset.bm);render();saveNotes();return}
   const s=e.target.closest('[data-sess]');if(s){selSess=selSess===s.dataset.sess?'':s.dataset.sess;sel=null;try{localStorage.setItem('ccb:sel','')}catch(e){}render();return}
   const c=e.target.closest('.card');if(c)select(c.dataset.id);

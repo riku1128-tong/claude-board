@@ -47,6 +47,33 @@ Windows は PowerShell / コマンドプロンプトから同じコマンドで�
 完了タスクは既定で直近 7 日分だけ表示します（`--done-days`）。ファイル自体は Claude Code の `cleanupPeriodDays`（既定 30 日、未完了も含む）で自動削除され、`deleted` にしたタスクは即時に消えます。
 付箋とブックマークだけは `board-notes.json`（このフォルダ内）に保存されます。
 
+## 使用量（レート制限メーターとトークン消費グラフ）
+
+ボード最上段の「使用量」には 2 種類の情報が出ます。
+
+- **メーター（5時間制限 / 週間・全モデル / 週間・Fable）**: Claude の利用上限に対する %。データ源は `usage-latest.json`（このフォルダ内、`.gitignore` 済み）。
+  - **ターミナルの `claude` を使う場合**: `~/.claude/settings.json` にステータスラインを設定すると、Claude Code が渡してくる `rate_limits` が自動で書き込まれます（Pro/Max のみ。60 秒ごとに更新）。
+
+    ```json
+    {
+      "statusLine": {
+        "type": "command",
+        "command": "cat > /c/Users/you/Documents/git/claude-board/usage-latest.json",
+        "refreshInterval": 60
+      }
+    }
+    ```
+
+    ※ Claude デスクトップアプリの Code タブはステータスラインを実行しないので、この方法では更新されません。
+  - **デスクトップアプリの場合**: Claude Code に「使用量をボードに送って」と頼むと、`get_usage` の結果を `POST /api/usage` に送れます。手で送るなら:
+
+    ```bash
+    curl -X POST -H "content-type: application/json" http://localhost:8787/api/usage -d '{"windows":[{"label":"5-hour limit","percentUsed":38,"resetsAt":"2026-09-21T09:40:00Z"},{"label":"Weekly · all models","percentUsed":50,"resetsAt":"2026-09-26T07:00:00Z"},{"label":"Weekly · Fable","percentUsed":97,"resetsAt":"2026-09-26T07:00:00Z"}]}'
+    ```
+
+  - % の履歴は `usage-history.json` に 14 日分保存され、メーター右の小さな折れ線に出ます。15 分以上古いデータには「（古い）」と表示します。
+- **グラフ（直近 5 時間・直近 7 日）**: セッション記録の `message.usage` から集計した**新規トークン**（入力＋キャッシュ作成＋出力）を Fable とその他のモデルで積み上げ表示。キャッシュ読取はホバーで確認できます。制限に当たった時刻には赤い点線で「制限」と印が付きます。これは完全にローカルのデータなので設定不要です。
+
 ## 画面
 
 - **セッション帯**: 稼働中セッションが先頭。クリックでそのセッションのタスクだけに絞り込み

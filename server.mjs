@@ -20,6 +20,9 @@ const CLAUDE_DIR = path.resolve(arg('--dir', process.env.CLAUDE_CONFIG_DIR || pa
 const NOTES_FILE = path.join(__dirname, 'board-notes.json');
 const ACTIVE_MIN = Number(arg('--active-minutes', 10)); // この分数以内に更新があれば「稼働中」
 const DONE_DAYS = Number(arg('--done-days', 7)); // 完了タスクはこの日数以内のものだけ表示（0 で無制限）。ファイル自体は Claude Code の cleanupPeriodDays（既定30日）で消える
+const USAGE_FILE = path.join(__dirname, 'usage-latest.json');  // 使用量（レート制限の %）。statusLine の stdin をそのまま、または POST /api/usage で書かれる
+const USAGE_HIST = path.join(__dirname, 'usage-history.json'); // 使用量 % の履歴（14 日分）
+const TOKEN_DAYS = 7; // transcript から集計するトークン消費の日数
 
 // ---------- utils ----------
 const exists = p => { try { fs.accessSync(p); return true; } catch { return false; } };
@@ -199,6 +202,102 @@ async function scanTasks(sessions) {
 }
 function normStatus(s) { s = String(s || 'pending').toLowerCase(); if (/progress|active|doing/.test(s)) return 'in_progress'; if (/complete|done|resolved|closed/.test(s)) return 'completed'; if (/delete|cancel/.test(s)) return 'deleted'; return 'pending'; }
 
+// ---------- usage: レート制限の %（usage-latest.json） ----------
+// 受け付ける形式は 2 つ:
+//   1. Claude Code の statusLine に渡される stdin JSON（rate_limits.five_hour / seven_day / …）。settings.json の statusLine で
+//      `cat > <このフォルダ>/usage-latest.json` とすれば自動で更新される（ターミナルの claude のみ。デスクトップアプリは statusLine を実行しない）
+//   2. POST /api/usage の {windows:[{label, percentUsed, resetsAt}]}（デスクトップの get_usage の出力そのまま、または {plan:{windows}} で包んだもの）
+const WINDOW_LABELS = { five_hour: '5時間制限', seven_day: '週間・全モデル', spend_limit: '追加利用（支出上限）' };
+function windowKey(label) {
+  const l = String(label || '').toLowerCase();
+  if (/5.?hour|5 ?時間/.test(l)) return 'five_hour';
+  if (/week|週/.test(l)) { const m = l.match(/[·・]\s*(.+)$/); return m && !/all models|全モデル/.test(m[1]) ? 'seven_day_' + m[1].trim().replace(/\s+/g, '_') : 'seven_day'; }
+  return l.replace(/\W+/g, '_') || 'unknown';
+}
+function windowLabel(key, raw) { if (WINDOW_LABELS[key]) return WINDOW_LABELS[key]; const m = key.match(/^seven_day_(.+)$/); return m ? '週間・' + m[1].replace(/_/g, ' ').replace(/^\w/, c => c.toUpperCase()) : (raw || key); }
+const toMs = v => v == null ? null : typeof v === 'number' ? (v < 1e11 ? v * 1000 : v) : (Date.parse(v) || null);
+function normalizeUsage(j) {
+  if (!j || typeof j !== 'object') return null;
+  if (j.plan?.windows && !j.windows) j = { ...j, windows: j.plan.windows, planName: j.plan.plan };
+  const windows = [];
+  if (j.rate_limits && typeof j.rate_limits === 'object') {
+    for (const [k, v] of Object.entries(j.rate_limits)) if (v && v.used_percentage != null) windows.push({ key: k, label: windowLabel(k), pct: Number(v.used_percentage), resetsAt: toMs(v.resets_at) });
+  } else if (Array.isArray(j.windows)) {
+    for (const w of j.windows) { const pct = Number(w.pct ?? w.percentUsed ?? w.used_percentage); if (Number.isNaN(pct)) continue; const key = w.key || windowKey(w.label); windows.push({ key, label: windowLabel(key, w.label), pct, resetsAt: toMs(w.resetsAt ?? w.resets_at) }); }
+  }
+  if (!windows.length) return null;
+  return { source: j.source || (j.rate_limits ? 'statusline' : 'push'), at: Number(j.at) || null, plan: j.planName || j.plan?.plan || (typeof j.plan === 'string' ? j.plan : ''), windows };
+}
+async function readUsage() {
+  const st = await stat(USAGE_FILE); if (!st) return null;
+  const u = normalizeUsage(await readJson(USAGE_FILE)); if (!u) return null;
+  u.at = u.at || st.mtimeMs; return u;
+}
+let histCache = null;
+async function recordUsage(u) {
+  if (!histCache) histCache = (await readJson(USAGE_HIST)) || [];
+  if (u) {
+    const last = histCache[histCache.length - 1];
+    const w = Object.fromEntries(u.windows.map(x => [x.key, x.pct]));
+    const changed = !last || JSON.stringify(last.w) !== JSON.stringify(w);
+    if (!last || (u.at > last.at && (changed || u.at - last.at >= 30 * 60e3))) {
+      histCache.push({ at: u.at, w });
+      const cutoff = Date.now() - 14 * 864e5; histCache = histCache.filter(h => h.at >= cutoff);
+      fsp.writeFile(USAGE_HIST, JSON.stringify(histCache)).catch(() => {});
+    }
+  }
+  return histCache;
+}
+
+// ---------- tokens: transcript の message.usage を集計 ----------
+// 各 transcript は追記のみなので、前回読んだ位置から差分だけ読む
+const tokenCache = new Map(); // file -> {pos, size, events, hits}
+async function readFrom(p, start) { // start 以降を「完全な行」の単位で読む
+  const st = await stat(p); if (!st || st.size <= start) return { text: '', end: start, size: st?.size ?? 0 };
+  const fh = await fsp.open(p, 'r');
+  try { const b = Buffer.alloc(st.size - start); const { bytesRead } = await fh.read(b, 0, b.length, start); const buf = b.subarray(0, bytesRead); const nl = buf.lastIndexOf(10); if (nl < 0) return { text: '', end: start, size: st.size }; return { text: buf.subarray(0, nl + 1).toString('utf8'), end: start + nl + 1, size: st.size }; } finally { await fh.close(); }
+}
+async function scanTokens(sessions) {
+  const since = Date.now() - (TOKEN_DAYS + 1) * 864e5;
+  const events = [], hits = [];
+  for (const s of sessions.values()) {
+    const st = await stat(s.file); if (!st) continue;
+    let c = tokenCache.get(s.file);
+    if (!c || st.size < c.pos) c = { pos: 0, size: 0, events: [], hits: [], seen: new Set() }; // 縮んでいたら書き直されたので全読み
+    if (st.size > c.pos) {
+      const { text, end } = await readFrom(s.file, c.pos);
+      for (const l of lines(text)) {
+        if (l.type !== 'assistant' || !l.timestamp) continue;
+        const t = Date.parse(l.timestamp); if (!t) continue;
+        if (l.quotaLimits?.status === 'rejected') c.hits.push({ t, type: l.quotaLimits.rateLimitType || '', resetsAt: toMs(l.quotaLimits.resetsAt) });
+        const u = l.message?.usage, model = l.message?.model || '';
+        if (!u || model === '<synthetic>') continue;
+        const id = l.message.id || l.uuid; if (c.seen.has(id)) continue; c.seen.add(id); // 1 メッセージが content ブロックごとに複数行に分かれ usage が重複する
+        c.events.push({ t, model, fresh: (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.output_tokens || 0), cached: u.cache_read_input_tokens || 0, out: u.output_tokens || 0 });
+      }
+      c.pos = end; c.size = st.size;
+      c.events = c.events.filter(e => e.t >= since); c.hits = c.hits.filter(h => h.t >= since);
+      if (c.seen.size > 5000) c.seen = new Set([...c.seen].slice(-2000));
+      tokenCache.set(s.file, c);
+    }
+    events.push(...c.events.filter(e => e.t >= since)); hits.push(...c.hits);
+  }
+  return bucketTokens(events, hits);
+}
+function bucketTokens(events, hits) {
+  const now = Date.now(), isFable = m => /fable/i.test(m);
+  const h5start = now - 5 * 3600e3, h5 = Array.from({ length: 20 }, (_, i) => ({ t: h5start + i * 15 * 60e3, fable: 0, other: 0, cached: 0 }));
+  const d7 = []; for (let i = TOKEN_DAYS - 1; i >= 0; i--) { const d = new Date(now - i * 864e5); d.setHours(0, 0, 0, 0); d7.push({ t: d.getTime(), fable: 0, other: 0, cached: 0 }); }
+  const dayIdx = t => { for (let i = d7.length - 1; i >= 0; i--) if (t >= d7[i].t) return i; return -1; };
+  for (const e of events) {
+    const k = isFable(e.model) ? 'fable' : 'other';
+    if (e.t >= h5start) { const b = h5[Math.min(19, Math.floor((e.t - h5start) / (15 * 60e3)))]; b[k] += e.fresh; b.cached += e.cached; }
+    const di = dayIdx(e.t); if (di >= 0) { d7[di][k] += e.fresh; d7[di].cached += e.cached; }
+  }
+  const models = {}; for (const e of events) models[e.model] = (models[e.model] || 0) + e.fresh;
+  return { h5, d7, hits: hits.filter(h => h.t >= d7[0].t).sort((a, b) => a.t - b.t), models };
+}
+
 // ---------- state ----------
 let cache = { at: 0, data: null };
 async function buildState() {
@@ -219,7 +318,9 @@ async function buildState() {
   const sessArr = [...sessions.values()].filter(s => s.state !== 'idle' || tasks.some(t => t.sessionId === s.id) || (Date.now() - s.lastAt) < 7 * 864e5)
     .sort((a, b) => (b.running - a.running) || (b.lastAt - a.lastAt)).slice(0, 60).map(({ todos, file, pdir, ...rest }) => ({ ...rest, taskCount: tasks.filter(t => t.sessionId === rest.id).length }));
   const notes = (await readJson(NOTES_FILE)) || {};
-  const data = { scannedAt: Date.now(), claudeDir: CLAUDE_DIR, dirExists: exists(CLAUDE_DIR), activeMinutes: ACTIVE_MIN, doneDays: DONE_DAYS, sessions: sessArr, tasks, notes };
+  const latest = await readUsage();
+  const usage = { ...(latest || { source: '', at: null, plan: '', windows: null }), history: await recordUsage(latest), tokens: await scanTokens(sessions) };
+  const data = { scannedAt: Date.now(), claudeDir: CLAUDE_DIR, dirExists: exists(CLAUDE_DIR), activeMinutes: ACTIVE_MIN, doneDays: DONE_DAYS, sessions: sessArr, tasks, notes, usage };
   cache = { at: Date.now(), data };
   return data;
 }
@@ -235,6 +336,13 @@ async function handle(req, res) {
       if (!j || typeof j !== 'object') { res.writeHead(400); return res.end('bad json'); }
       await fsp.writeFile(NOTES_FILE, JSON.stringify(j, null, 2)); cache.at = 0;
       res.writeHead(200, { 'content-type': 'application/json' }); return res.end('{"ok":true}');
+    }
+    if (url.pathname === '/api/usage' && req.method === 'POST') { // 使用量 % を外から押し込む（デスクトップの get_usage の出力など）
+      let body = ''; for await (const c of req) body += c; const u = normalizeUsage(safeJson(body));
+      if (!u) { res.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' }); return res.end('windows が見つかりません: {windows:[{label, percentUsed, resetsAt}]} か statusLine の JSON を送ってください'); }
+      u.source = 'push'; u.at = Date.now();
+      await fsp.writeFile(USAGE_FILE, JSON.stringify(u, null, 2)); cache.at = 0;
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' }); return res.end(JSON.stringify({ ok: true, windows: u.windows }));
     }
     if (url.pathname === '/api/events') { // SSE: ファイル更新を軽く通知
       res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' });

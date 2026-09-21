@@ -5,3 +5,7 @@ board-notes.json
 .DS_Store
 Thumbs.db
 *.log
+
+# statusLine から書き込まれる使用量データ（ユーザーデータ）
+usage-latest.json
+usage-history.json

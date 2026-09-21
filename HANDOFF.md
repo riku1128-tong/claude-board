@@ -77,6 +77,17 @@ claude-board/
   - セッション詳細パネル: セッションカード／セレクトで選ぶと左に状態・cwd・ブランチ・pid・開始/最終更新・直近の発話・付箋（`sess:<id>` キー）を表示。閉じるボタンの svg サイズ未指定バグも修正。
   - 完了タスクの保持: `--done-days`（既定 7、0 で無制限）より古い完了は `/api/state` から省く。`~/.claude/tasks/` 自体は Claude Code の `cleanupPeriodDays`（既定 30 日）で pending も含めて削除される。`status: deleted` はファイル即削除。`tasks/<session>/` には `.lock` `.highwatermark` の隠しファイルがある（無視）。
 
+## 使用量セクション（2026-09-21 追加）
+
+- `/api/state.usage = { source, at, plan, windows:[{key,label,pct,resetsAt}], history:[{at,w:{key:pct}}], tokens:{h5,d7,hits,models} }`
+- **% の取得経路は 2 つ**（`normalizeUsage()` が両方を同じ形に正規化）:
+  1. `usage-latest.json` に statusLine の stdin JSON（`rate_limits.five_hour/seven_day/spend_limit`）が書かれる。settings.json の statusLine `cat > <board>/usage-latest.json`。**デスクトップアプリのセッションでは statusLine が実行されないことを確認済み**（hook の入力にも rate_limits は無い）。ドキュメント上 per-model 週間枠（Fable）は statusLine には無い
+  2. `POST /api/usage` にデスクトップの `get_usage` 出力（`{plan:{windows:[{label,percentUsed,resetsAt}]}}` or `{windows:[…]}`）を送る。ラベルから `five_hour` / `seven_day` / `seven_day_<model>` キーを推定
+- 履歴は `usage-history.json`（14 日、値が変わった時 or 30 分ごとに 1 点）。メーターの sparkline に使用
+- トークン集計は transcript を **前回位置から差分読み**（`tokenCache`、追記前提・縮んだら全読み）。assistant 行は content ブロックごとに複数行に分かれ `message.usage` が重複するので `message.id` で重複排除。`model === "<synthetic>"` は制限ヒット等の擬似メッセージなので除外し、`quotaLimits.status === "rejected"` を「制限に当たった」印に使う
+- 色: Fable `--c-fable` / その他 `--c-other`（light #3f6fe8/#d99a2b, dark #6a8ff2/#bd8a2c。dataviz の validate_palette.js で CVD 検証済み）。メーターは accent → amber(70%) → red(90%)、トラックは同ランプの薄色
+- 未解決: デスクトップ利用時に % を自動更新する手段が無い。候補: 定期的に Claude Code セッションから `get_usage` → POST（cron/loop）、または Claude Code 側の将来機能待ち
+
 ## 次にやると良いこと（優先順）
 
 1. ~~**Windows 実機確認**~~ 済み（上記）。残: `todos/` `tasks/` があるマシンでのタスク表示確認
