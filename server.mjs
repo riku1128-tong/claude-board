@@ -20,7 +20,8 @@ const CLAUDE_DIR = path.resolve(arg('--dir', process.env.CLAUDE_CONFIG_DIR || pa
 const NOTES_FILE = path.join(__dirname, 'board-notes.json');
 const ACTIVE_MIN = Number(arg('--active-minutes', 10)); // この分数以内に更新があれば「稼働中」
 const DONE_DAYS = Number(arg('--done-days', 7)); // 完了タスクはこの日数以内のものだけ表示（0 で無制限）。ファイル自体は Claude Code の cleanupPeriodDays（既定30日）で消える
-const USAGE_FILE = path.join(__dirname, 'usage-latest.json');  // 使用量（レート制限の %）。statusLine の stdin をそのまま、または POST /api/usage で書かれる
+const USAGE_FILE = path.join(__dirname, 'usage-latest.json');  // 使用量（レート制限の %）。statusLine の stdin がそのまま書かれる
+const USAGE_MANUAL = path.join(__dirname, 'usage-manual.json'); // POST /api/usage で手入力された %。statusLine に無い枠（モデル別の週間枠など）を補う
 const USAGE_HIST = path.join(__dirname, 'usage-history.json'); // 使用量 % の履歴（14 日分）
 const TOKEN_DAYS = 7; // transcript から集計するトークン消費の日数
 
@@ -232,13 +233,24 @@ function normalizeUsage(j) {
   if (!windows.length) return null;
   return { source: j.source || (j.rate_limits ? 'statusline' : 'push'), at: Number(j.at) || null, plan: j.planName || j.plan?.plan || (typeof j.plan === 'string' ? j.plan : ''), windows };
 }
-async function readUsage() {
-  const st = await stat(USAGE_FILE); if (!st) return null;
-  const u = normalizeUsage(await readJson(USAGE_FILE)); if (!u) return null;
+async function readOne(file) {
+  const st = await stat(file); if (!st) return null;
+  const u = normalizeUsage(await readJson(file)); if (!u) return null;
   u.at = u.at || st.mtimeMs;
   // リセット時刻を過ぎた枠は、その後の値が分からないので落とす（Claude Code の statusLine も同じ挙動）
+  for (const w of u.windows) w.at = w.at || u.at;
   u.windows = u.windows.filter(w => !w.resetsAt || w.resetsAt > Date.now());
   return u.windows.length ? u : null;
+}
+// statusLine（自動・無料）を優先し、そこに無い枠だけ手入力の値で補う。
+// statusLine の rate_limits には five_hour / seven_day しか来ないので、モデル別の週間枠（Fable など）はこの経路で表示する
+async function readUsage() {
+  const [auto, manual] = await Promise.all([readOne(USAGE_FILE), readOne(USAGE_MANUAL)]);
+  if (!auto && !manual) return null;
+  const base = auto || manual;
+  const windows = [...(auto?.windows || [])];
+  for (const w of manual?.windows || []) if (!windows.some(x => x.key === w.key)) windows.push(w);
+  return { ...base, source: auto && manual ? 'statusline+manual' : base.source, windows };
 }
 let histCache = null;
 async function recordUsage(u) {
@@ -347,8 +359,8 @@ async function handle(req, res) {
     if (url.pathname === '/api/usage' && req.method === 'POST') { // 使用量 % を外から押し込む（デスクトップの get_usage の出力など）
       let body = ''; for await (const c of req) body += c; const u = normalizeUsage(safeJson(body));
       if (!u) { res.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' }); return res.end('windows が見つかりません: {windows:[{label, percentUsed, resetsAt}]} か statusLine の JSON を送ってください'); }
-      u.source = 'push'; u.at = Date.now();
-      await fsp.writeFile(USAGE_FILE, JSON.stringify(u, null, 2)); cache.at = 0;
+      u.source = 'manual'; u.at = Date.now();
+      await fsp.writeFile(USAGE_MANUAL, JSON.stringify(u, null, 2)); cache.at = 0;
       res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' }); return res.end(JSON.stringify({ ok: true, windows: u.windows }));
     }
     if (url.pathname === '/api/events') { // SSE: ファイル更新を軽く通知
