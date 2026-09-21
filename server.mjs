@@ -211,7 +211,9 @@ const WINDOW_LABELS = { five_hour: '5時間制限', seven_day: '週間・全モ�
 function windowKey(label) {
   const l = String(label || '').toLowerCase();
   if (/5.?hour|5 ?時間/.test(l)) return 'five_hour';
-  if (/week|週/.test(l)) { const m = l.match(/[·・]\s*(.+)$/); return m && !/all models|全モデル/.test(m[1]) ? 'seven_day_' + m[1].trim().replace(/\s+/g, '_') : 'seven_day'; }
+  // "Weekly · all models" → seven_day, "Weekly · Fable" → seven_day_fable。区切り文字（·）は Windows の curl 引数経由で cp932 の「・」(81 45) に化け、
+  // UTF-8 で読むと U+FFFD + "E" になるので、U+FFFD とその直後の 1 文字を捨ててから英数字だけで判定する
+  if (/week|週/.test(l)) { const rest = l.replace(/�./g, '').replace(/weekly|week|週間|週|all models|全モデル|limit/g, '').replace(/[^a-z0-9]+/g, ' ').trim(); return rest ? 'seven_day_' + rest.replace(/\s+/g, '_') : 'seven_day'; }
   return l.replace(/\W+/g, '_') || 'unknown';
 }
 function windowLabel(key, raw) { if (WINDOW_LABELS[key]) return WINDOW_LABELS[key]; const m = key.match(/^seven_day_(.+)$/); return m ? '週間・' + m[1].replace(/_/g, ' ').replace(/^\w/, c => c.toUpperCase()) : (raw || key); }

@@ -65,7 +65,7 @@ Windows は PowerShell / コマンドプロンプトから同じコマンドで�
     ```
 
     ※ Claude デスクトップアプリの Code タブはステータスラインを実行しないので、この方法では更新されません。
-  - **デスクトップアプリの場合**: Claude Code に「使用量をボードに送って」と頼むと、`get_usage` の結果を `POST /api/usage` に送れます。手で送るなら:
+  - **デスクトップアプリの場合**: Claude Code のセッションに「10 分ごとに get_usage の結果を http://127.0.0.1:8787/api/usage に POST して」と頼むと、そのセッション内の cron（`CronCreate`）で自動送信されます（セッションを閉じると止まる・7 日で期限切れ。1 回あたりの消費はごく小さいですが、コンテキストの小さいセッションで動かす方が安上がりです）。単発なら「使用量をボードに送って」で十分。手で送るなら:
 
     ```bash
     curl -X POST -H "content-type: application/json" http://localhost:8787/api/usage -d '{"windows":[{"label":"5-hour limit","percentUsed":38,"resetsAt":"2026-09-21T09:40:00Z"},{"label":"Weekly · all models","percentUsed":50,"resetsAt":"2026-09-26T07:00:00Z"},{"label":"Weekly · Fable","percentUsed":97,"resetsAt":"2026-09-26T07:00:00Z"}]}'
