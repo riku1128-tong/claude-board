@@ -16,7 +16,7 @@ End If
 
 ' cmd /c wraps the whole command in one more pair of quotes, because cmd strips the outermost pair.
 ' shell.Run(cmd, 0, False): 0 = hidden window, False = do not wait for it to finish.
-cmd = "cmd /c """ & "cd /d " & Q(here) & " && " & Q(nodeExe) & " server.mjs >> server.log 2>&1" & """"
+cmd = "cmd /c """ & "cd /d " & Q(here) & " && " & Q(nodeExe) & " server.mjs --tailscale >> server.log 2>&1" & """"
 shell.Run cmd, 0, False
 
 Function Q(s)

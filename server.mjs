@@ -15,7 +15,12 @@ const args = process.argv.slice(2);
 const arg = (k, d) => { const i = args.indexOf(k); return i >= 0 && args[i + 1] ? args[i + 1] : d; };
 const PORT = Number(arg('--port', process.env.PORT || 8787));
 // localhost は環境により 127.0.0.1 / ::1 のどちらにも解決されるので、既定では両方の loopback に bind する
-const HOSTS = arg('--host', '') ? [arg('--host')] : ['127.0.0.1', '::1'];
+// --host はカンマ区切りで複数指定可。--tailscale を付けると Tailscale の IPv4（100.64.0.0/10）を自動検出して追加で待ち受ける
+// （インターネットには出ない私設ネットワークなので、スマホ等から http://<PC名>:PORT で開ける。LAN や公開 IP には bind しない）
+const HOSTS = arg('--host', '') ? arg('--host').split(',').map(s => s.trim()).filter(Boolean) : ['127.0.0.1', '::1'];
+const TAILSCALE = args.includes('--tailscale');
+const isTailscaleIp = ip => { const m = ip.match(/^100\.(\d+)\./); return !!m && Number(m[1]) >= 64 && Number(m[1]) <= 127; };
+function tailscaleIps() { return Object.values(os.networkInterfaces()).flat().filter(i => i && i.family === 'IPv4' && !i.internal && isTailscaleIp(i.address)).map(i => i.address); }
 const CLAUDE_DIR = path.resolve(arg('--dir', process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')));
 const NOTES_FILE = path.join(__dirname, 'board-notes.json');
 const SPEND_FILE = path.join(__dirname, 'board-spend.json'); // サービス別の支出台帳（ユーザーデータ）。POST /api/spend で追記
@@ -393,3 +398,18 @@ if (!ok.length) {
 console.log(`\n  Claude Code Task Board\n  → http://localhost:${PORT}${ok.some(b => b.host === '127.0.0.1') ? `  (http://127.0.0.1:${PORT})` : ''}\n  読み取り元: ${CLAUDE_DIR} ${exists(CLAUDE_DIR) ? '' : '（見つかりません: --dir で指定してください）'}`);
 for (const b of ng) if (b.err.code === 'EADDRINUSE') console.log(`  注意: ${b.host}:${PORT} は別のプロセスが使用中です。localhost がそちらに解決される場合は別アプリの画面が出るので、--port で別ポートを指定してください。`);
 console.log('');
+// Tailscale: 起動時に無くても（ログオン直後はまだ接続前のことがある）60 秒ごとに探して、見つかった時点で bind する
+if (TAILSCALE) {
+  const boundTs = new Set();
+  const tryBind = async () => {
+    for (const ip of tailscaleIps()) {
+      if (boundTs.has(ip)) continue;
+      const r = await listen(ip);
+      if (r.server) { boundTs.add(ip); console.log(`  Tailscale: http://${ip}:${PORT} で待ち受け開始（${new Date().toLocaleTimeString()}）— 同じ tailnet の端末から http://${os.hostname().toLowerCase()}:${PORT} でも開けます`); }
+      else if (r.err.code !== 'EADDRINUSE') console.log(`  Tailscale: ${ip}:${PORT} に bind できません (${r.err.code})`);
+    }
+  };
+  await tryBind();
+  if (!boundTs.size) console.log('  Tailscale: まだ接続されていません（IPv4 100.64.0.0/10 が見つかりません）。接続されたら自動で待ち受けます');
+  setInterval(tryBind, 60e3).unref();
+}
