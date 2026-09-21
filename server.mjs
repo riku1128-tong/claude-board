@@ -42,6 +42,15 @@ const lines = s => s.split('\n').filter(Boolean).map(safeJson).filter(Boolean);
 function decodeProjectDir(name) { return name.replace(/^([A-Za-z])--/, '$1:/').replace(/-/g, '/'); }
 // Windows/Unix どちらのパスでも末尾のフォルダ名を取る（Linux 上で Windows のパスを読む場合も考慮）
 const baseName = p => String(p || '').split(/[\\/]+/).filter(Boolean).pop() || String(p || '');
+// プロジェクト表示名。フォルダを選ばずに起動したセッションは cwd がホーム（VS Code / ターミナル）や
+// Desktop の一時作業フォルダ（scratch-workspaces）になるので、ユーザー名やランダムな名前ではなくその旨を出す
+const HOME = os.homedir().replace(/[\\/]+$/, '').toLowerCase();
+function projectName(cwd) {
+  const c = String(cwd || '').replace(/[\\/]+$/, '');
+  if (c.toLowerCase() === HOME) return 'ホーム（フォルダ未選択）';
+  if (/[\\/]scratch-workspaces[\\/]/.test(c)) return 'フォルダなし（Desktop）';
+  return baseName(c) || c;
+}
 // message.content（文字列 or ブロック配列）からテキスト部分だけを取り出す
 function textOf(c) { if (typeof c === 'string') return c; if (Array.isArray(c)) return c.filter(x => x?.type === 'text' && x.text).map(x => x.text).join('\n'); return ''; }
 // Claude Code がユーザー発話に注入する制御タグ（システム注意書き・スラッシュコマンドのエコー・通知）を除去し、人が書いた本文だけを残す
@@ -123,7 +132,7 @@ async function scanSessions() {
       // 直近のアシスタント発話（thinking / tool_use は除く）
       const lastText = textOf(latest(l => l.type === 'assistant' && textOf(l.message?.content).trim())?.message?.content).trim();
       sessions.set(id, {
-        id, cwd, project: baseName(cwd) || cwd, branch,
+        id, cwd, project: projectName(cwd), branch,
         title: (lv?.name || customTitle || summary || firstPrompt || '(無題セッション)').replace(/\s+/g, ' ').slice(0, 120),
         startedAt: Date.parse(earliest(l => l.timestamp)?.timestamp || '') || st.birthtimeMs || st.mtimeMs, lastAt: lastTs, ageMin: Math.round(ageMin),
         state, running: !!lv, pid: lv?.pid || null, name: lv?.name || '', version: lv?.version || '', entrypoint,
