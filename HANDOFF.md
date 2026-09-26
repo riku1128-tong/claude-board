@@ -1,25 +1,28 @@
 # Claude Code Task Board — 引き継ぎメモ（Claude Code 用）
 
 このプロジェクトは Claude（チャット）で作成し、ここから Claude Code で続きを開発する。
-最初に本ファイルと `README.md` を読み、`node server.mjs` で起動して http://localhost:8787 を確認してから作業を始めること。
+最初に本ファイルと `README.md` を読むこと。サーバーはログオン時にタスクスケジューラ `ClaudeBoard` が自動起動するので、通常は起動操作は不要（http://localhost:8787 で確認できる）。
 
 ## 目的
 
 Claude Code が `~/.claude` 配下に記録しているタスク・セッションを、ブラウザのカンバン風ボードで可視化するローカル管理画面。
-デザインの元イメージ: すりガラス調のレーン（進行中／判断待ち／エージェント待ち／保留／完了）＋左側に詳細パネル（付箋・履歴タブ、「エージェントに依頼」ボタン）。
+レーンは 進行中 / ブロック中 / 待機中 / 完了 の 4 つ、左に詳細パネル（付箋・直近の発話・データ）。配色はオレンジ×ブラック（2026-09-24 刷新）。当初案にあった「判断待ち」「エージェント待ち」「保留」レーンと「エージェントに依頼」ボタンは未実装。
 
 ## ファイル構成（依存パッケージなし / Node 18+）
 
 ```
 claude-board/
-├─ server.mjs      # HTTP サーバー + ~/.claude の読み取り。/api/state, /api/notes(POST), /api/events(SSE)
-├─ index.html      # 画面（単一 HTML、CSS/JS 同梱。Google Fonts のみ外部）
-├─ board-notes.json# 付箋・ブックマークの保存先（実行時に生成、ユーザーデータ）
-├─ README.md       # 使い方
-└─ HANDOFF.md      # このファイル
+├─ server.mjs         # HTTP サーバー + ~/.claude の読み取り
+├─ index.html         # 画面（単一 HTML、CSS/JS 同梱。Google Fonts のみ外部）
+├─ start-hidden.vbs   # コンソール窓なし起動（タスクスケジューラ用。ASCII のみで書くこと）
+├─ board-notes.json   # 付箋・ブックマーク（実行時に生成、gitignore）
+├─ board-spend.json   # 支出台帳（同上）
+├─ board-meters.json  # 従量メーター設定（同上）
+├─ README.md          # 使い方
+└─ HANDOFF.md         # このファイル
 ```
 
-起動: `node server.mjs [--port 8787] [--dir <.claudeのパス>] [--active-minutes 10]`
+起動: `node server.mjs [--port 8787] [--dir <.claudeのパス>] [--host 127.0.0.1,::1] [--active-minutes 10] [--done-days 7] [--tailscale]`
 環境変数 `CLAUDE_CONFIG_DIR` も参照。
 
 ## 読み取っているデータと実際の形式（確認済み）
@@ -39,15 +42,20 @@ claude-board/
 
 ## `/api/state` の返却形
 
+エンドポイント: `GET /api/state` / `POST /api/notes` / `GET|POST /api/spend` / `GET /api/session/<id>/messages?n=20` / `GET /api/events`(SSE)
+
 ```ts
 {
-  scannedAt, claudeDir, dirExists, activeMinutes,
+  scannedAt, claudeDir, dirExists, activeMinutes, doneDays,
   sessions: [{ id, cwd, project, branch, title, startedAt, lastAt, ageMin,
-               state: "agent"|"you"|"idle", running, pid, name, version, lastText, size, taskCount }],
+               state: "agent"|"you"|"idle", running, pid, name, version, entrypoint, lastText, size, taskCount }],
   tasks: [{ id: "<sessionId>:<taskId>", source: "tasks"|"todos"|"transcript", sessionId,
             subject, description, activeForm, status, owner, blocks, blockedBy, metadata,
             updatedAt, createdAt, blocked, blockerSubjects, session: {id, project, cwd, branch, state, title, lastAt} }],
-  notes: { notes: { [taskId]: [{text, ts}] }, bookmarks: [taskId] }
+  notes: { notes: { [taskId]: [{text, ts}] }, bookmarks: [taskId] },
+  usage: { tokens: { h5, d7, hits, models } },
+  spend: { entries: [{ id, ts, service, amount, currency, note, sessionId, status, source, recurring, until, project, sessionTitle }],
+           meters: [{ service, file, currency, today, month, total, days, months }] }
 }
 ```
 
@@ -56,7 +64,7 @@ claude-board/
 - トップバー: ボード／ブックマーク切替、検索(Ctrl K)、セッション絞り込み、完了の表示切替、テーマ切替、凡例、接続状態チップ
 - 「セッション」帯: 稼働中を先頭に横スクロール。クリックで絞り込み
 - レーン: 進行中 / ブロック中(blockedBy 未完了あり) / 待機中 / 完了
-- 左パネル: 状態・担当・セッション・プロジェクト(cwd)・ブランチ・待ち先・更新時刻、タブ「付箋／説明／データ」
+- 左パネル: タスク選択時は 状態・担当・cwd・ブランチ・待ち先・更新時刻＋タブ「付箋／説明／データ」、セッション選択時は 状態・起動元・pid＋タブ「付箋／直近の発話／データ」
 - 更新: SSE(`/api/events`) 5秒 tick + 15秒フォールバックポーリング。付箋入力中はパネルを再描画しない
 - テーマ: CSS カスタムプロパティを `:root` / `prefers-color-scheme` / `[data-theme]` の3段で定義
 
