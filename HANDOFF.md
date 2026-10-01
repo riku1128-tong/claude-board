@@ -100,6 +100,7 @@ claude-board/
 ## サービスと支出の台帳（2026-09-21）
 
 - `board-spend.json = { entries:[{ id, ts, service, amount|null, currency, note, sessionId, status:"confirmed"|"unconfirmed", source:"user"|"agent"|"scan"|"manual" }] }`。`/api/state.spend` で返し、各 entry に `project` `sessionTitle` を付ける（sessionId から解決）
+- `amount` は**税込みの実支払額**（2026-10-02 ユーザー決定。Claude Max は $100 + 消費税 10% = $110）
 - `POST /api/spend`: 追加 / `{update:id,…}` / `{delete:id}`。amount null は「要確認」
 - 記録ルールは `~/.claude/CLAUDE.md`（ユーザーのグローバル設定）に追記済み: 有料サービスの購入・チャージ・新規サービス利用（0 円含む）が起きたらセッション内で curl POST する。JSON は Windows の引数文字化け回避のためファイル経由。`sessionId` は `CLAUDE_CODE_SESSION_ID`
 - 初期データは transcript 全走査で洗い出した（ユーザー申告 4 件 + 検出 5 件）。走査の要点: `message.content` のテキストだけを対象に「購入|チャージ|クレジット|api key|$d」等で grep。tool_result やシステムプロンプトは "aws" "stripe"（ハムスターの縞）等のノイズが多いので除外
